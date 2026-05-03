@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { vinService, type ScanResponse } from "../api/vinService";
+
+import { scanVin, type ScanResponse } from "../api/vinService";
 
 const RegionToggle = ({ region, onRegionChange }: { region: string; onRegionChange: (r: string) => void }) => {
   return (
