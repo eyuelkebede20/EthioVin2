@@ -32,7 +32,14 @@ const SearchBox = ({ region, vin, setVin, error, setError, onDecode, loading }: 
   };
 
   return (
-    <div className="relative group text-left">
+    // Added form tag to allow "Enter" key submissions
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onDecode();
+      }}
+      className="relative group text-left"
+    >
       <input
         type="text"
         value={vin}
@@ -41,11 +48,11 @@ const SearchBox = ({ region, vin, setVin, error, setError, onDecode, loading }: 
         placeholder={region === "asean" ? "Enter 17-digit VIN..." : "e.g. GDH201-1234567"}
         className={`w-full p-5 text-lg border-2 rounded-2xl outline-none transition-all ${error ? "border-red-400" : "border-slate-200 focus:border-blue-500"} ${loading ? "opacity-50" : ""}`}
       />
-      <button onClick={onDecode} disabled={loading} className="absolute right-3 top-3 bottom-3 bg-blue-600 text-white px-8 rounded-xl font-bold hover:bg-blue-700 transition disabled:bg-blue-400">
+      <button type="submit" disabled={loading} className="absolute right-3 top-3 bottom-3 bg-blue-600 text-white px-8 rounded-xl font-bold hover:bg-blue-700 transition disabled:bg-blue-400">
         {loading ? "DECODING..." : "DECODE"}
       </button>
       {error && <p className="text-red-500 text-sm mt-3 font-medium">{error}</p>}
-    </div>
+    </form>
   );
 };
 
@@ -70,10 +77,16 @@ export default function Scanner({ onScanComplete }: { onScanComplete: (res: Scan
     setError("");
 
     try {
-      const result = await vinService.scanVin(vin);
+      // 2. Use the imported function directly
+      const result = await scanVin(vin);
+
+      // 3. Inject the VIN back into the payload so the ledger can save it
+      result.vin = vin;
+
       onScanComplete(result);
     } catch (err: any) {
-      setError(err.response?.data?.error || "Network error. Check backend connection.");
+      // 4. Standard fetch error handling
+      setError(err.message || "Network error. Check backend connection.");
     } finally {
       setLoading(false);
     }

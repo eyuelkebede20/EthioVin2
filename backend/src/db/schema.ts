@@ -143,7 +143,7 @@ export const vehicle_ledger = pgTable("vehicle_ledger", {
   manufacturer: text("manufacturer").notNull(),
   year: text("year").notNull(),
   model: text("model").notNull(), // Manually inputted by diagnostician
-
+  image_url: text("image_url"),
   // Base Decoded Facts
   wmi: text("wmi"),
   vds: text("vds"),

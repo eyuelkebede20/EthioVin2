@@ -63,48 +63,6 @@ export const submitVerifiedSpec = async (req: Request, res: Response) => {
   }
 };
 
-function decodeVinYear(vin: string): number | null {
-  if (vin.length !== 17) return null;
-  const yearChar = vin.charAt(9).toUpperCase();
-  const decadeChar = vin.charAt(6);
-  const yearMap: Record<string, number> = {
-    A: 1980,
-    B: 1981,
-    C: 1982,
-    D: 1983,
-    E: 1984,
-    F: 1985,
-    G: 1986,
-    H: 1987,
-    J: 1988,
-    K: 1989,
-    L: 1990,
-    M: 1991,
-    N: 1992,
-    P: 1993,
-    R: 1994,
-    S: 1995,
-    T: 1996,
-    V: 1997,
-    W: 1998,
-    X: 1999,
-    Y: 2000,
-    "1": 2001,
-    "2": 2002,
-    "3": 2003,
-    "4": 2004,
-    "5": 2005,
-    "6": 2006,
-    "7": 2007,
-    "8": 2008,
-    "9": 2009,
-  };
-  let baseYear = yearMap[yearChar];
-  if (!baseYear) return null;
-  if (/[A-Z]/i.test(decadeChar)) baseYear += 30;
-  return baseYear;
-}
-
 export const getConflicts = async (req: Request, res: Response) => {
   try {
     const conflicts = await db
@@ -137,72 +95,115 @@ export const resolveConflict = async (req: Request, res: Response) => {
   }
 };
 
+function decodeVinYear(vin: string): string {
+  if (!vin || vin.length !== 17) return "Unknown";
+
+  const yearChar = vin.charAt(9).toUpperCase();
+
+  // If the manufacturer uses a 0 or other invalid character as a filler
+  if (yearChar === "0" || yearChar === "U" || yearChar === "Z") return "Unknown";
+
+  const yearMap: Record<string, number> = {
+    A: 1980,
+    B: 1981,
+    C: 1982,
+    D: 1983,
+    E: 1984,
+    F: 1985,
+    G: 1986,
+    H: 1987,
+    J: 1988,
+    K: 1989,
+    L: 1990,
+    M: 1991,
+    N: 1992,
+    P: 1993,
+    R: 1994,
+    S: 1995,
+    T: 1996,
+    V: 1997,
+    W: 1998,
+    X: 1999,
+    Y: 2000,
+    "1": 2001,
+    "2": 2002,
+    "3": 2003,
+    "4": 2004,
+    "5": 2005,
+    "6": 2006,
+    "7": 2007,
+    "8": 2008,
+    "9": 2009,
+  };
+
+  let baseYear = yearMap[yearChar];
+  if (!baseYear) return "Unknown";
+
+  const currentYear = new Date().getFullYear();
+  if (baseYear + 30 <= currentYear + 2) {
+    baseYear += 30;
+  }
+
+  return baseYear.toString();
+}
+
 export const processVin = async (req: Request, res: Response) => {
-  try {
-    const { vin } = req.body;
-    console.log(`[VIN Scanner] Received request for VIN:`, vin);
+  const { vin } = req.body;
+  if (!vin || vin.length !== 17 || /[IQO]/i.test(vin)) {
+    return res.status(400).json({ error: "Invalid VIN format" });
+  }
 
-    if (!vin || vin.length !== 17 || /[IQO]/i.test(vin)) {
-      console.log(`[VIN Scanner] Invalid format`);
-      return res.status(400).json({ error: "Invalid VIN format" });
-    }
+  const wmi = vin.substring(0, 3).toUpperCase();
+  const vds_code = vin.substring(3, 8).toUpperCase();
+  const year = decodeVinYear(vin);
 
-    const wmi = vin.substring(0, 3).toUpperCase();
-    const vds_code = vin.substring(3, 8).toUpperCase();
-    const year = decodeVinYear(vin);
+  const cachedData = await db
+    .select()
+    .from(vds_cache)
+    .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)))
+    .leftJoin(vehicle_specs, eq(vds_cache.spec_id, vehicle_specs.id))
+    .limit(1);
 
-    console.log(`[VIN Scanner] Parsed: WMI=${wmi}, VDS=${vds_code}, YEAR=${year}`);
+  if (cachedData.length > 0) {
+    return res.json({ hit: true, data: cachedData[0] });
+  }
 
-    // 1. Check local verified cache
-    const cachedData = await db
-      .select()
-      .from(vds_cache)
-      .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)))
-      .leftJoin(vehicle_specs, eq(vds_cache.spec_id, vehicle_specs.id))
-      .limit(1);
+  let predictedManufacturer = "Unknown";
+  const wmiRecord = await db.select().from(wmi_mapping).where(eq(wmi_mapping.wmi, wmi)).limit(1);
 
-    if (cachedData.length > 0) {
-      console.log(`[VIN Scanner] Cache hit`);
-      return res.json({ hit: true, data: cachedData[0] });
-    }
+  if (wmiRecord.length > 0) {
+    predictedManufacturer = wmiRecord[0].manufacturer;
+  } else {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    console.log(`[VIN Scanner] Cache miss. Checking WMI mapping.`);
-    let predictedManufacturer = "Unknown";
-    const wmiRecord = await db.select().from(wmi_mapping).where(eq(wmi_mapping.wmi, wmi)).limit(1);
+      const nhtsaUrl = `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/${vin}?format=json`;
+      const nhtsaRes = await fetch(nhtsaUrl, {
+        signal: controller.signal,
+        headers: { "User-Agent": "EthioVin-App/1.0", Accept: "application/json" },
+      });
+      clearTimeout(timeoutId);
 
-    if (wmiRecord.length > 0) {
-      predictedManufacturer = wmiRecord[0].manufacturer;
-    } else {
-      console.log(`[VIN Scanner] Unknown WMI. Querying NHTSA fallback.`);
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        const nhtsaUrl = `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/${vin}?format=json`;
-        const nhtsaRes = await fetch(nhtsaUrl, {
-          signal: controller.signal,
-          headers: { "User-Agent": "EthioVin-App/1.0", Accept: "application/json" },
-        });
-        clearTimeout(timeoutId);
-
-        if (nhtsaRes.ok) {
-          const data = await nhtsaRes.json();
-          const makeResult = data.Results.find((r: any) => r.Variable === "Make");
-          if (makeResult && makeResult.Value) {
-            predictedManufacturer = makeResult.Value.toUpperCase();
-          }
+      if (nhtsaRes.ok) {
+        const data = await nhtsaRes.json();
+        const makeResult = data.Results.find((r: any) => r.Variable === "Make");
+        if (makeResult && makeResult.Value) {
+          predictedManufacturer = makeResult.Value.toUpperCase();
         }
-      } catch (err) {
-        console.error("[VIN Scanner] NHTSA DecodeVin API failed:", err);
       }
-
-      await db.insert(wmi_mapping).values({ wmi, manufacturer: predictedManufacturer }).onConflictDoNothing({ target: wmi_mapping.wmi });
+    } catch (err) {
+      console.warn("NHTSA Make fallback failed");
     }
 
-    console.log(`[VIN Scanner] Manufacturer: ${predictedManufacturer}. Fetching models.`);
-    let suggestedModels: any[] = [];
+    await db.insert(wmi_mapping).values({ wmi, manufacturer: predictedManufacturer }).onConflictDoNothing({ target: wmi_mapping.wmi });
+  }
 
-    if (predictedManufacturer !== "Unknown") {
+  let suggestedModels: any[] = [];
+
+  if (predictedManufacturer !== "Unknown") {
+    // FIX: Only query year models if the year is actually known
+    if (year !== "Unknown") {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -219,7 +220,14 @@ export const processVin = async (req: Request, res: Response) => {
           const yearModelsData = data.Results;
 
           if (yearModelsData && yearModelsData.length > 0) {
-            suggestedModels = Array.from(new Set(yearModelsData.map((m: any) => m.Model_Name.trim().toUpperCase()))).map((modelName, idx) => ({
+            suggestedModels = Array.from(
+              new Set(
+                yearModelsData
+                  // FIX: Drop corrupted items before calling .trim()
+                  .filter((m: any) => m && m.Model_Name)
+                  .map((m: any) => String(m.Model_Name).trim().toUpperCase()),
+              ),
+            ).map((modelName, idx) => ({
               id: idx + 9999,
               make: predictedManufacturer,
               model: modelName as string,
@@ -227,26 +235,21 @@ export const processVin = async (req: Request, res: Response) => {
           }
         }
       } catch (err) {
-        console.error(`[VIN Scanner] NHTSA Models API failed:`, err);
-      }
-
-      if (suggestedModels.length === 0) {
-        console.log(`[VIN Scanner] Falling back to local DB for models.`);
-        suggestedModels = await db.select().from(nhtsa_models).where(ilike(nhtsa_models.make, predictedManufacturer));
+        console.warn(`Failed to fetch ${year} models. Falling back to DB.`);
       }
     }
 
-    console.log(`[VIN Scanner] Success. Returning payload.`);
-    return res.json({
-      hit: false,
-      promptAdmin: true,
-      extractedData: { wmi, vds_code, year, manufacturer: predictedManufacturer },
-      suggestedModels,
-    });
-  } catch (error) {
-    console.error("[VIN Scanner] Critical Crash:", error);
-    return res.status(500).json({ error: "Internal server error during processing." });
+    if (suggestedModels.length === 0) {
+      suggestedModels = await db.select().from(nhtsa_models).where(ilike(nhtsa_models.make, predictedManufacturer));
+    }
   }
+
+  return res.json({
+    hit: false,
+    promptAdmin: true,
+    extractedData: { wmi, vds_code, year, manufacturer: predictedManufacturer },
+    suggestedModels,
+  });
 };
 
 export const saveVehicleToLedger = async (req: Request, res: Response) => {
@@ -293,5 +296,47 @@ export const generateDraft = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("AI Draft generation failed:", error);
     return res.status(500).json({ error: "Failed to generate AI specs draft." });
+  }
+};
+
+export const getVehicleImages = async (req: Request, res: Response) => {
+  const { manufacturer, year, model, startIndex = 1 } = req.body;
+
+  if (!manufacturer || !model) {
+    return res.status(400).json({ error: "Manufacturer and model are required." });
+  }
+
+  const query = `${year !== "Unknown" ? year : ""} ${manufacturer} ${model} exterior`.trim();
+  const apiKey = process.env.SERPER_API_KEY;
+
+  try {
+    const response = await fetch("https://google.serper.dev/images", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": apiKey as string,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: query }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Serper API Error:", data);
+      throw new Error("Failed to fetch images.");
+    }
+
+    // Serper returns a large array of images.
+    // We map the URLs and slice exactly the 4 the frontend is asking for.
+    const allImages = data.images?.map((item: any) => item.imageUrl) || [];
+
+    // startIndex comes in as 1, 5, 9... we convert to 0-based index
+    const startIdx = startIndex - 1;
+    const images = allImages.slice(startIdx, startIdx + 4);
+
+    return res.json({ images });
+  } catch (error) {
+    console.error("Image search failed:", error);
+    return res.status(500).json({ error: "Internal server error fetching images." });
   }
 };

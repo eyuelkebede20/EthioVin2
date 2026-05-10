@@ -1,18 +1,5 @@
 import { useState } from "react";
-
-// Adjust this type to match your actual API response
-export interface ScanResponse {
-  hit: boolean;
-  promptAdmin?: boolean;
-  extractedData?: {
-    wmi: string;
-    vds_code: string;
-    year: number;
-    manufacturer: string;
-  };
-  data?: any;
-  vin?: string;
-}
+import type { ScanResponse } from "../api/vinService";
 
 interface VerificationFormProps {
   scanData: ScanResponse;
@@ -27,38 +14,68 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [images, setImages] = useState<string[]>([]);
+  const [selectedImage, setSelectedImage] = useState<string>("");
+  const [fetchingImages, setFetchingImages] = useState(false);
 
-  const extracted = scanData?.extractedData || scanData?.data?.vds_cache;
-  const manufacturer = extracted?.manufacturer || extracted?.wmi;
-  const year = extracted?.year;
+  // BULLETPROOF EXTRACTION
+  const extracted = scanData?.extractedData || scanData?.data?.vds_cache || {};
+  const manufacturer = extracted?.manufacturer || extracted?.wmi || "Unknown";
+  const rawYear = extracted?.year || "Unknown";
+  const wmi = extracted?.wmi || "Unknown";
+  const vds = extracted?.vds_code || extracted?.vds || "Unknown";
+  const vinToSave = scanData?.vin || scanData?.data?.vehicle_spec?.vin || "";
+
+  // MANUAL YEAR STATE
+  const [manualYear, setManualYear] = useState<string>("");
+  const finalYear = rawYear === "Unknown" ? manualYear : rawYear;
+
+  // GENERATE YEARS ARRAY (Current Year down to 1991)
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: currentYear - 1991 + 1 }, (_, i) => currentYear - i);
 
   const handleGenerateAI = async () => {
     if (!modelInput) return setError("Please enter the vehicle model.");
+    if (rawYear === "Unknown" && !manualYear) return setError("Please select a valid year.");
+
     setProcessing(true);
+    setFetchingImages(true); // Start image loader
     setError("");
 
     try {
+      // 1. Fetch AI Specs
       const res = await fetch("http://localhost:3000/api/v1/vin/generate-draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ manufacturer, year, model: modelInput }),
+        body: JSON.stringify({ manufacturer, year: finalYear, model: modelInput }),
       });
       const data = await res.json();
+      if (res.ok) setAiDraft(data.draft);
 
-      if (res.ok) {
-        setAiDraft(data.draft);
-      } else {
-        setError(data.error || "Failed to generate draft.");
+      // 2. Fetch Images
+      const imgRes = await fetch("http://localhost:3000/api/v1/vin/images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ manufacturer, year: finalYear, model: modelInput }),
+      });
+      const imgData = await imgRes.json();
+      if (imgRes.ok && imgData.images.length > 0) {
+        setImages(imgData.images);
+        setSelectedImage(imgData.images[0]); // Auto-select the first one
       }
     } catch (e) {
-      setError("Network error during AI generation.");
+      setError("Network error during generation.");
     } finally {
       setProcessing(false);
+      setFetchingImages(false);
     }
   };
 
   const handleSave = async () => {
+    if (rawYear === "Unknown" && !manualYear) return setError("Please select a valid year before saving.");
+
     setSaving(true);
     setError("");
 
@@ -68,11 +85,13 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          vin: scanData.vin || scanData.data?.vehicle_spec?.vin,
+          vin: vinToSave,
           manufacturer,
-          year,
+          year: finalYear,
           model: modelInput,
           hardwareSpecs: aiDraft,
+          baseFacts: { wmi, vds },
+          image_url: selectedImage,
         }),
       });
 
@@ -98,31 +117,7 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
       },
     }));
   };
-  const sections = [
-    {
-      title: "Engine",
-      color: "red",
-      key: "engine",
-      fields: [
-        { label: "Engine Model", name: "engineModel", type: "text" },
-        { label: "Fuel Type", name: "fuelType", type: "text" },
-        { label: "Emission Standard", name: "emissionStandard", type: "text" },
-        { label: "Fuel Consumption", name: "fuelConsumption", type: "text" },
-      ],
-    },
-    {
-      title: "Transmission",
-      color: "blue",
-      key: "transmission",
-      fields: [
-        { label: "Gearbox", name: "gearbox", type: "text" },
-        { label: "Type", name: "type", type: "text" },
-        { label: "Speeds", name: "speeds", type: "number" },
-        { label: "Drive Type", name: "driveType", type: "text" },
-      ],
-    },
-    // ...continue same pattern
-  ];
+
   return (
     <div className="max-w-6xl mx-auto bg-white p-8 rounded-xl shadow-lg border border-slate-200 mt-8">
       <h2 className="text-2xl font-bold mb-6">Verify & Update Specifications</h2>
@@ -130,18 +125,35 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
         <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
           <h3 className="font-bold text-slate-700 mb-4 border-b pb-2">Base Scanned Facts</h3>
-          <div className="flex flex-col gap-2 text-sm font-mono text-slate-600">
-            <div className="flex justify-between">
+          <div className="flex flex-col gap-3 text-sm font-mono text-slate-600">
+            <div className="flex justify-between items-center">
               <span>Manufacturer:</span> <span>{manufacturer}</span>
             </div>
-            <div className="flex justify-between">
-              <span>Year:</span> <span>{year}</span>
+
+            {/* CONDITIONAL YEAR RENDER */}
+            <div className="flex justify-between items-center">
+              <span>Year:</span>
+              {rawYear === "Unknown" ? (
+                <select value={manualYear} onChange={(e) => setManualYear(e.target.value)} className="p-1 border border-slate-300 rounded font-normal text-slate-700 focus:outline-blue-500 bg-white">
+                  <option value="" disabled>
+                    Select Year
+                  </option>
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span>{rawYear}</span>
+              )}
             </div>
-            <div className="flex justify-between">
-              <span>WMI:</span> <span>{extracted?.wmi}</span>
+
+            <div className="flex justify-between items-center">
+              <span>WMI:</span> <span>{wmi}</span>
             </div>
-            <div className="flex justify-between">
-              <span>VDS:</span> <span>{extracted?.vds_code || extracted?.vds}</span>
+            <div className="flex justify-between items-center">
+              <span>VDS:</span> <span>{vds}</span>
             </div>
           </div>
         </div>
@@ -149,17 +161,44 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
         <div className="flex flex-col gap-4">
           <label className="font-bold text-slate-700">
             Vehicle Model
-            <input type="text" value={modelInput} onChange={(e) => setModelInput(e.target.value)} placeholder="e.g. Model Y, RAV4" className="w-full p-3 border rounded mt-1 font-normal" />
+            <input
+              type="text"
+              value={modelInput}
+              onChange={(e) => setModelInput(e.target.value)}
+              placeholder="e.g. Model Y, RAV4"
+              className="w-full p-3 border rounded mt-1 font-normal focus:outline-blue-500"
+            />
           </label>
-          <button onClick={handleGenerateAI} disabled={processing || !modelInput} className="w-full bg-blue-600 text-white px-4 py-3 rounded font-bold disabled:bg-slate-400 hover:bg-blue-700">
+          <button
+            onClick={handleGenerateAI}
+            disabled={processing || !modelInput || (rawYear === "Unknown" && !manualYear)}
+            className="w-full bg-blue-600 text-white px-4 py-3 rounded font-bold disabled:bg-slate-400 hover:bg-blue-700 transition"
+          >
             {processing ? "Generating..." : "Generate Specs Draft (AI)"}
           </button>
-          {error && <div className="text-red-600 text-sm font-bold bg-red-50 p-2 rounded">{error}</div>}
+          {error && <div className="text-red-600 text-sm font-bold bg-red-50 p-3 rounded border border-red-200">{error}</div>}
         </div>
       </div>
-
+      {images.length > 0 && (
+        <div className="border-t pt-6 mb-8 animate-fade-in">
+          <h3 className="font-bold text-xl mb-4 text-slate-800">Select Vehicle Image</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {images.map((imgUrl, idx) => (
+              <div
+                key={idx}
+                onClick={() => setSelectedImage(imgUrl)}
+                className={`cursor-pointer rounded-xl overflow-hidden border-4 transition-all ${
+                  selectedImage === imgUrl ? "border-blue-500 scale-105 shadow-lg" : "border-transparent opacity-70 hover:opacity-100"
+                }`}
+              >
+                <img src={imgUrl} alt={`Option ${idx + 1}`} className="w-full h-32 object-cover" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {aiDraft && (
-        <div className="border-t pt-6">
+        <div className="border-t pt-6 animate-fade-in">
           <h3 className="font-bold text-xl mb-4 text-slate-800">Hardware Specifications</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="p-4 border rounded bg-red-50/30">
@@ -398,10 +437,10 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
           </div>
 
           <div className="flex justify-end gap-4 mt-8">
-            <button onClick={onCancel} className="px-6 py-3 border border-slate-300 rounded font-bold text-slate-600 hover:bg-slate-50">
+            <button onClick={onCancel} className="px-6 py-3 border border-slate-300 rounded font-bold text-slate-600 hover:bg-slate-50 transition">
               Cancel
             </button>
-            <button onClick={handleSave} disabled={saving} className="px-6 py-3 bg-green-600 text-white rounded font-bold hover:bg-green-700 disabled:bg-slate-400">
+            <button onClick={handleSave} disabled={saving} className="px-6 py-3 bg-green-600 text-white rounded font-bold hover:bg-green-700 disabled:bg-slate-400 transition shadow-md">
               {saving ? "Saving..." : "Save to Database"}
             </button>
           </div>

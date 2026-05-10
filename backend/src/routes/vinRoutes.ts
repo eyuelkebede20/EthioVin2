@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { processVin, submitVerifiedSpec, getConflicts, generateDraft, resolveConflict, saveVehicleToLedger } from "../controllers/vinController";
+import { processVin, submitVerifiedSpec, getVehicleImages, getConflicts, generateDraft, resolveConflict, saveVehicleToLedger } from "../controllers/vinController";
 import { requireAuth, requireRole } from "../middleware/authMiddleware";
 
 const router = Router();
@@ -17,4 +17,5 @@ router.post("/resolve", requireRole(["super_admin"]), resolveConflict);
 router.post("/generate-draft", requireAuth, generateDraft);
 router.post("/log", requireAuth, saveVehicleToLedger);
 
+router.post("/images", requireAuth, getVehicleImages);
 export default router;
