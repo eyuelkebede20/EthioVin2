@@ -16,8 +16,7 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
   const [error, setError] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string>("");
-  const [fetchingImages, setFetchingImages] = useState(false);
-
+  const [, setFetchingImages] = useState(false);
   // BULLETPROOF EXTRACTION
   const extracted = scanData?.extractedData || scanData?.data?.vds_cache || {};
   const manufacturer = extracted?.manufacturer || extracted?.wmi || "Unknown";
