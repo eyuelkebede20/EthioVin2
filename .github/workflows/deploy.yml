@@ -6,25 +6,7 @@ on:
       - main
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      client: ${{ steps.filter.outputs.client }}
-      backend: ${{ steps.filter.outputs.backend }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            client:
-              - 'client/**'
-            backend:
-              - 'backend/**'
-
   build-and-deploy-client:
-    needs: changes
-    if: ${{ needs.changes.outputs.client == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -55,15 +37,10 @@ jobs:
           server-dir: /public_html/ethiovin/
 
   deploy-backend:
-    needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      # If your cPanel runs the raw TypeScript files via tsx/ts-node, this is fine.
-      # If you compile to JS first, add a build step here and change local-dir to ./backend/dist/
 
       - name: Trigger cPanel Passenger Restart
         run: |
