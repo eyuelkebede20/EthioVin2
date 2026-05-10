@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  build-and-deploy-client:
+  deploy-all:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -15,15 +15,14 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: "22"
 
       - name: Build Frontend
         working-directory: ./client
         env:
           VITE_BACKEND_URL: https://ethiovinapi.senaycreatives.com
         run: |
-          npm ci
+          npm install
           npm run build
 
       - name: Deploy Frontend via FTP
@@ -34,12 +33,6 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./client/dist/
           server-dir: /public_html/ethiovin/
-
-  deploy-backend:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
 
       - name: Trigger cPanel Passenger Restart
         run: |
