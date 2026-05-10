@@ -6,7 +6,25 @@ on:
       - main
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      client: ${{ steps.filter.outputs.client }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            client:
+              - 'client/**'
+            backend:
+              - 'backend/**'
+
   build-and-deploy-client:
+    needs: changes
+    if: ${{ needs.changes.outputs.client == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -19,8 +37,9 @@ jobs:
 
       - name: Build Frontend
         working-directory: ./client
+        env:
+          VITE_BACKEND_URL: https://ethiovinapi.senaycreatives.com
         run: |
-          echo "VITE_BACKEND_URL=https://apibonomeal.senaycreatives.com" > .env
           npm install
           npm run build
 
@@ -31,9 +50,11 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./client/dist/
-          server-dir: /public_html/bono-client/
+          server-dir: /public_html/ethiovin/
 
   deploy-backend:
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -51,7 +72,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./backend/
-          server-dir: /bono-api/
+          server-dir: /ethiovin-api/
           exclude: |
             **/.env
             **/node_modules/**
