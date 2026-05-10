@@ -57,7 +57,7 @@ export const vinService = {
       credentials: "include", // This line is required
       body: JSON.stringify({ vin }),
     });
-    return response.data;
+    return await response.data;
   },
 
   submitVerification: async (payload: VerifyPayload): Promise<{ success: boolean }> => {

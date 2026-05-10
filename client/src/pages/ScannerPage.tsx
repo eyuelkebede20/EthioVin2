@@ -1,7 +1,6 @@
 import { useState } from "react";
 import Scanner from "../components/Scanner";
 import VerificationForm from "../components/VerificationForm";
-import VehicleSpecCard from "../components/VehicleSpecCard";
 import type { ScanResponse } from "../api/vinService";
 
 export default function ScannerPage() {
