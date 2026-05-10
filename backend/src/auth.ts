@@ -15,7 +15,7 @@ export const auth = betterAuth({
     },
   }),
   baseURL: "http://localhost:3000",
-  trustedOrigins: ["http://localhost:5173"],
+  trustedOrigins: ["http://localhost:5173", "ethiovinapi.senaycreatives.com"],
   emailAndPassword: {
     enabled: true,
   },
