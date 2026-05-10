@@ -34,13 +34,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "./client/package-lock.json"
 
       - name: Build Frontend
         working-directory: ./client
         env:
           VITE_BACKEND_URL: https://ethiovinapi.senaycreatives.com
         run: |
-          npm install
+          npm ci
           npm run build
 
       - name: Deploy Frontend via FTP
@@ -60,10 +62,13 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # If your cPanel runs the raw TypeScript files via tsx/ts-node, this is fine.
+      # If you compile to JS first, add a build step here and change local-dir to ./backend/dist/
+
       - name: Trigger cPanel Passenger Restart
         run: |
           mkdir -p backend/tmp
-          date > backend/tmp/restart.txt
+          touch backend/tmp/restart.txt
 
       - name: Deploy Backend via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -77,3 +82,5 @@ jobs:
             **/.env
             **/node_modules/**
             **/.git/**
+            **/.github/**
+            README.md
