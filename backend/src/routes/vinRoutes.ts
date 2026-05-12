@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { processVin, submitVerifiedSpec, getVehicleImages, getConflicts, generateDraft, resolveConflict, saveVehicleToLedger } from "../controllers/vinController";
-import { requireAuth, requireRole } from "../middleware/authMiddleware";
+import { processVin, submitVerifiedSpec, getVehicleImages, getConflicts, generateDraft, resolveConflict, saveVehicleToLedger } from "../controllers/vinController.ts";
+import { requireAuth, requireRole } from "../middleware/authMiddleware.ts";
 import rateLimit from "express-rate-limit";
 
 const externalApiLimiter = rateLimit({
