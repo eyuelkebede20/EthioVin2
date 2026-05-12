@@ -5,8 +5,6 @@ import { db } from "./db/index.ts";
 import * as schema from "./db/schema.ts";
 import "dotenv/config";
 
-const FRONTEND_URL = process.env.FRONTEND_URL;
-
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
@@ -18,7 +16,7 @@ export const auth = betterAuth({
     },
   }),
   baseURL: process.env.BACKEND_URL,
-  trustedOrigins: [`${FRONTEND_URL}`],
+  trustedOrigins: ["https://ethiovin.senaycreatives.com"],
   emailAndPassword: {
     enabled: true,
   },
