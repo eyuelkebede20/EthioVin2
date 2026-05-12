@@ -8,21 +8,11 @@ import "dotenv/config";
 // Add this below your vinRoutes
 const app = express();
 
-const allowedOrigins = [`${process.env.FRONTEND_URL}`, "https://ethiovin.senaycreatives.com/", "http://localhost:3000", "http://localhost:5173"].filter(Boolean);
-
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORSi"));
-      }
-    },
+    origin: ["https://ethiovin.senaycreatives.com", "http://localhost:5173", "http://localhost:3000"],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    // Explicitly allowing your custom auth headers
     allowedHeaders: ["Content-Type", "Authorization", "x-user-id"],
   }),
 );
