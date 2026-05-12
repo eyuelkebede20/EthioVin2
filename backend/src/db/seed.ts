@@ -82,12 +82,17 @@ async function seedDatabase() {
 
         const uniqueModels = Array.from(new Set(formattedModels.map((m: any) => m.model))).map((modelName) => ({ make, model: modelName as string }));
 
-        await db.insert(nhtsa_models).values(uniqueModels).onConflictDoNothing();
+        // Insert in chunks of 500 to prevent database parameter limits on shared hosting
+        const CHUNK_SIZE = 500;
+        for (let i = 0; i < uniqueModels.length; i += CHUNK_SIZE) {
+          const chunk = uniqueModels.slice(i, i + CHUNK_SIZE);
+          await db.insert(nhtsa_models).values(chunk).onConflictDoNothing();
+        }
 
-        console.log(`✅ ${make} seeded.`);
+        console.log(`✅ ${make} seeded (${uniqueModels.length} models).`);
       } catch (reqError: any) {
         // Catch the error for this specific make and continue to the next one
-        console.error(`❌ Network error fetching ${make}: ${reqError.message}. Skipping.`);
+        console.error(`❌ Error processing ${make}: ${reqError.message}. Skipping.`);
       }
 
       // Wait 1.5 seconds before hitting the API again to prevent rate-limiting/ECONNRESET
