@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { requireRole, requireAuth } from "../middleware/authMiddleware";
-import { getUnknownWMIs, updateWMI, getManufacturers, getDistinctManufacturers } from "../controllers/adminController";
+import { requireRole, requireAuth } from "../middleware/authMiddleware.ts";
+import { getUnknownWMIs, updateWMI, getManufacturers, getDistinctManufacturers } from "../controllers/adminController.ts";
 
 const router = Router();
 
