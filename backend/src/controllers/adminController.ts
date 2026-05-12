@@ -34,18 +34,17 @@ export const updateWMI = async (req: Request, res: Response) => {
 
 export const getManufacturers = async (req: Request, res: Response) => {
   try {
-    // Group by manufacturer to get a distinct, unique list
-    const results = await db.select({ manufacturer: wmi_mapping.manufacturer }).from(wmi_mapping).groupBy(wmi_mapping.manufacturer);
+    // 1. Use selectDistinct instead of groupBy
+    const results = await db.selectDistinct({ manufacturer: wmi_mapping.manufacturer }).from(wmi_mapping);
 
-    // Flatten the array of objects into a simple array of strings
+    // 2. Format the array
     const manufacturers = results
       .map((r) => r.manufacturer)
-      .filter(Boolean) // Remove any null/undefined values
-      .sort(); // Alphabetize the list for the frontend dropdown
+      .filter(Boolean)
+      .sort();
 
     return res.json(manufacturers);
   } catch (error) {
-    // Log the exact error to your terminal so you aren't guessing
     console.error("[Admin API] Crash in getManufacturers:", error);
     return res.status(500).json({ error: "Failed to fetch manufacturers." });
   }

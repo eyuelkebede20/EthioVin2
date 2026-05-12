@@ -8,12 +8,7 @@ import adminRoutes from "./routes/adminRoutes";
 // Add this below your vinRoutes
 const app = express();
 
-app.use(
-  cors({
-    origin: ["http://localhost:5173", "ethiovin.senaycreatives.com"],
-    credentials: true,
-  }),
-);
+app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
 
 // Intercept auth routes before Express router parses or strips the URL
 app.use((req, res, next) => {

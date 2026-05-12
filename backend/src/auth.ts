@@ -3,6 +3,9 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin } from "better-auth/plugins";
 import { db } from "./db";
 import * as schema from "./db/schema";
+import "dotenv/config";
+
+const FRONTEND_URL = process.env.FRONTEND_URL;
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -14,8 +17,8 @@ export const auth = betterAuth({
       verification: schema.verification,
     },
   }),
-  baseURL: "http://localhost:3000",
-  trustedOrigins: ["http://localhost:5173", "ethiovinapi.senaycreatives.com"],
+  baseURL: process.env.BACKEND_URL,
+  trustedOrigins: [`${FRONTEND_URL}`],
   emailAndPassword: {
     enabled: true,
   },

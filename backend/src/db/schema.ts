@@ -1,4 +1,4 @@
-import { pgTable, jsonb, varchar, integer, primaryKey, pgEnum, timestamp, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, serial, jsonb, varchar, integer, primaryKey, index, uniqueIndex, pgEnum, timestamp, foreignKey } from "drizzle-orm/pg-core";
 import { text, boolean } from "drizzle-orm/pg-core";
 
 export const statusEnum = pgEnum("status", ["pending", "verified", "rejected", "conflict"]);
@@ -19,14 +19,7 @@ export const nhtsa_models = pgTable("nhtsa_models", {
 
 export const vehicle_specs = pgTable("vehicle_specs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  model_id: integer("model_id")
-    .references(() => nhtsa_models.id)
-    .notNull(),
-  year: integer("year").notNull(),
-  engine_cc: integer("engine_cc").notNull(),
-  fuel: fuelEnum("fuel").notNull(),
-  transmission: transEnum("transmission").notNull(),
-  body_style: bodyStyleEnum("body_style").notNull(),
+  hardware_specs: jsonb("hardware_specs").notNull(),
 });
 
 export const vds_cache = pgTable(
@@ -35,7 +28,7 @@ export const vds_cache = pgTable(
     wmi: varchar("wmi", { length: 3 })
       .notNull()
       .references(() => wmi_mapping.wmi),
-    vds_code: varchar("vds_code", { length: 5 }).notNull(),
+    vds_code: varchar("vds_code", { length: 6 }).notNull(), // Change from 5 to 6 to handle full DNA
     spec_id: integer("spec_id")
       .references(() => vehicle_specs.id)
       .notNull(),
@@ -45,6 +38,7 @@ export const vds_cache = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.wmi, table.vds_code] }),
+    wmiVdsIdx: index("wmi_vds_search_idx").on(table.wmi, table.vds_code),
   }),
 );
 
@@ -135,28 +129,35 @@ export const verification = pgTable("verification", {
   createdAt: timestamp("createdAt"),
   updatedAt: timestamp("updatedAt"),
 });
-export const vehicle_ledger = pgTable("vehicle_ledger", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  vin: text("vin").notNull(),
-  manufacturer: text("manufacturer").notNull(),
-  year: text("year").notNull(),
-  model: text("model").notNull(), // Manually inputted by diagnostician
-  image_url: text("image_url"),
-  // Base Decoded Facts
-  wmi: text("wmi"),
-  vds: text("vds"),
-  vis: text("vis"),
-  plant: text("plant"),
-  country: text("country"),
+export const vehicle_ledger = pgTable(
+  "vehicle_ledger",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    vin: varchar("vin", { length: 17 }).notNull().unique(),
+    manufacturer: text("manufacturer").notNull(),
+    year: text("year").notNull(),
+    model: text("model").notNull(), // Manually inputted by diagnostician
+    image_url: text("image_url"),
+    // Base Decoded Facts
+    wmi: text("wmi"),
+    vds: text("vds"),
+    vis: text("vis"),
+    plant: text("plant"),
+    country: text("country"),
 
-  // The verified JSON object (Engine, Transmission, Dimensions, etc.)
-  hardware_specs: jsonb("hardware_specs").notNull(),
+    // The verified JSON object (Engine, Transmission, Dimensions, etc.)
+    hardware_specs: jsonb("hardware_specs").notNull(),
 
-  // Audit Trail
-  scannedBy: text("scannedBy")
-    .notNull()
-    .references(() => user.id),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+    // Audit Trail
+    scannedBy: text("scannedBy")
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    // Creates a fast lookup index on the VIN column
+    vinIdx: index("vin_search_idx").on(table.vin),
+  }),
+);

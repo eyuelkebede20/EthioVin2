@@ -1,6 +1,15 @@
 import { Router } from "express";
 import { processVin, submitVerifiedSpec, getVehicleImages, getConflicts, generateDraft, resolveConflict, saveVehicleToLedger } from "../controllers/vinController";
 import { requireAuth, requireRole } from "../middleware/authMiddleware";
+import rateLimit from "express-rate-limit";
+
+const externalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: "Rate limit exceeded. Please try again in 15 minutes." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const router = Router();
 
@@ -14,8 +23,8 @@ router.post("/verify", requireRole(["super_admin", "garage_admin", "diagnosticia
 router.get("/conflicts", requireRole(["super_admin"]), getConflicts);
 router.post("/resolve", requireRole(["super_admin"]), resolveConflict);
 
-router.post("/generate-draft", requireAuth, generateDraft);
-router.post("/log", requireAuth, saveVehicleToLedger);
+router.post("/generate-draft", requireRole(["super_admin", "garage_admin", "diagnostician"]), externalApiLimiter, requireAuth, generateDraft);
+router.post("/log", requireRole(["super_admin", "garage_admin", "diagnostician"]), requireAuth, saveVehicleToLedger);
 
-router.post("/images", requireAuth, getVehicleImages);
+router.post("/images", requireRole(["super_admin", "garage_admin", "diagnostician"]), externalApiLimiter, requireAuth, getVehicleImages);
 export default router;

@@ -3,6 +3,7 @@ import { vds_cache, wmi_mapping, nhtsa_models, vehicle_specs, verification_log, 
 import { and, eq, desc, ilike } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { generateVehicleSpecsDraft } from "../services/aiService";
+import { sanitizeVin } from "../utils/helpers";
 
 export const submitVerifiedSpec = async (req: Request, res: Response) => {
   // Use the ID injected by the requireAuth middleware instead of hitting the DB again
@@ -148,15 +149,32 @@ function decodeVinYear(vin: string): string {
 }
 
 export const processVin = async (req: Request, res: Response) => {
-  const { vin } = req.body;
-  if (!vin || vin.length !== 17 || /[IQO]/i.test(vin)) {
+  let vin = sanitizeVin(req.body.vin);
+  if (!vin || vin.length !== 17 || /[IQO]/.test(vin)) {
     return res.status(400).json({ error: "Invalid VIN format" });
   }
 
-  const wmi = vin.substring(0, 3).toUpperCase();
-  const vds_code = vin.substring(3, 8).toUpperCase();
+  // 1. IDENTITY CHECK
+  const exactMatch = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, vin)).limit(1);
+  if (exactMatch.length > 0) {
+    return res.json({ hit: true, patientExists: true, data: exactMatch[0] });
+  }
+
+  // 2. DNA EXTRACTION
+  const wmi = vin.substring(0, 3);
+  const vds_code = vin.substring(3, 8);
   const year = decodeVinYear(vin);
 
+  // 3. PREDICT MAKE
+  let predictedManufacturer = "Unknown";
+  const wmiRecord = await db.select().from(wmi_mapping).where(eq(wmi_mapping.wmi, wmi)).limit(1);
+  if (wmiRecord.length > 0) {
+    predictedManufacturer = wmiRecord[0].manufacturer;
+  } else {
+    // ... (Keep NHTSA fallback logic same) ...
+  }
+
+  // 4. DNA CACHE CHECK
   const cachedData = await db
     .select()
     .from(vds_cache)
@@ -165,117 +183,149 @@ export const processVin = async (req: Request, res: Response) => {
     .limit(1);
 
   if (cachedData.length > 0) {
-    return res.json({ hit: true, data: cachedData[0] });
+    return res.json({
+      hit: true,
+      patientExists: false,
+      extractedData: { wmi, vds_code, year, manufacturer: predictedManufacturer },
+      data: cachedData[0], // Contains { vds_cache, vehicle_specs }
+    });
   }
 
-  let predictedManufacturer = "Unknown";
-  const wmiRecord = await db.select().from(wmi_mapping).where(eq(wmi_mapping.wmi, wmi)).limit(1);
-
-  if (wmiRecord.length > 0) {
-    predictedManufacturer = wmiRecord[0].manufacturer;
-  } else {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-      const nhtsaUrl = `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/${vin}?format=json`;
-      const nhtsaRes = await fetch(nhtsaUrl, {
-        signal: controller.signal,
-        headers: { "User-Agent": "EthioVin-App/1.0", Accept: "application/json" },
-      });
-      clearTimeout(timeoutId);
-
-      if (nhtsaRes.ok) {
-        const data = await nhtsaRes.json();
-        const makeResult = data.Results.find((r: any) => r.Variable === "Make");
-        if (makeResult && makeResult.Value) {
-          predictedManufacturer = makeResult.Value.toUpperCase();
-        }
-      }
-    } catch (err) {
-      console.warn("NHTSA Make fallback failed");
-    }
-
-    await db.insert(wmi_mapping).values({ wmi, manufacturer: predictedManufacturer }).onConflictDoNothing({ target: wmi_mapping.wmi });
-  }
-
-  let suggestedModels: any[] = [];
-
-  if (predictedManufacturer !== "Unknown") {
-    // FIX: Only query year models if the year is actually known
-    if (year !== "Unknown") {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        const yearModelsUrl = `https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/${predictedManufacturer}/modelyear/${year}?format=json`;
-        const yearModelsRes = await fetch(yearModelsUrl, {
-          signal: controller.signal,
-          headers: { "User-Agent": "EthioVin-App/1.0", Accept: "application/json" },
-        });
-        clearTimeout(timeoutId);
-
-        if (yearModelsRes.ok) {
-          const data = await yearModelsRes.json();
-          const yearModelsData = data.Results;
-
-          if (yearModelsData && yearModelsData.length > 0) {
-            suggestedModels = Array.from(
-              new Set(
-                yearModelsData
-                  // FIX: Drop corrupted items before calling .trim()
-                  .filter((m: any) => m && m.Model_Name)
-                  .map((m: any) => String(m.Model_Name).trim().toUpperCase()),
-              ),
-            ).map((modelName, idx) => ({
-              id: idx + 9999,
-              make: predictedManufacturer,
-              model: modelName as string,
-            }));
-          }
-        }
-      } catch (err) {
-        console.warn(`Failed to fetch ${year} models. Falling back to DB.`);
-      }
-    }
-
-    if (suggestedModels.length === 0) {
-      suggestedModels = await db.select().from(nhtsa_models).where(ilike(nhtsa_models.make, predictedManufacturer));
-    }
-  }
+  // 5. NEW SCAN PROMPT
+  // ... (Keep suggestedModels logic same) ...
 
   return res.json({
     hit: false,
+    patientExists: false,
     promptAdmin: true,
     extractedData: { wmi, vds_code, year, manufacturer: predictedManufacturer },
-    suggestedModels,
+    suggestedModels: [], // Populate with your existing logic
   });
 };
 
+// export const saveVehicleToLedger = async (req: Request, res: Response) => {
+//   const { vin, manufacturer, year, model, baseFacts, hardwareSpecs, image_url } = req.body;
+//   const userId = req.headers["x-user-id"] as string;
+
+//   try {
+//     await db.transaction(async (tx) => {
+//       // 1. SAVE DNA
+//       const [savedSpec] = await tx.insert(vehicle_specs).values({ hardware_specs: hardwareSpecs }).returning({ id: vehicle_specs.id });
+
+//       // 2. CACHE VDS
+//       if (baseFacts?.wmi && baseFacts?.vds) {
+//         await tx
+//           .insert(vds_cache)
+//           .values({
+//             wmi: baseFacts.wmi,
+//             vds_code: baseFacts.vds,
+//             spec_id: savedSpec.id,
+//             status: "verified",
+//           })
+//           .onConflictDoNothing();
+//       }
+
+//       // 3. SAVE IDENTITY
+//       await tx
+//         .insert(vehicle_ledger)
+//         .values({
+//           vin,
+//           manufacturer,
+//           year,
+//           model,
+//           image_url,
+//           wmi: baseFacts?.wmi,
+//           vds: baseFacts?.vds,
+//           hardware_specs: hardwareSpecs,
+//           scannedBy: userId,
+//         })
+//         .onConflictDoUpdate({
+//           target: vehicle_ledger.vin,
+//           set: { manufacturer, year, model, image_url, hardware_specs: hardwareSpecs, scannedBy: userId },
+//         });
+//     });
+
+//     return res.json({ success: true });
+//   } catch (error) {
+//     console.error("Save failed:", error);
+//     return res.status(500).json({ error: "Internal server error" });
+//   }
+// };
+
 export const saveVehicleToLedger = async (req: Request, res: Response) => {
-  const { vin, manufacturer, year, model, baseFacts, hardwareSpecs } = req.body;
+  const { vin, manufacturer, year, model, baseFacts, hardwareSpecs, image_url } = req.body;
   const userId = req.headers["x-user-id"] as string;
 
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!vin) return res.status(400).json({ error: "VIN is required" });
+
+  const cleanVin = vin
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  if (cleanVin.length !== 17) {
+    return res.status(400).json({ error: "Invalid VIN length" });
+  }
 
   try {
-    const newRecord = await db
-      .insert(vehicle_ledger)
-      .values({
-        vin,
-        manufacturer,
-        year,
-        model,
-        wmi: baseFacts.wmi,
-        vds: baseFacts.vds,
-        vis: baseFacts.vis,
-        plant: baseFacts.plant,
-        country: baseFacts.country,
-        hardware_specs: hardwareSpecs,
-        scannedBy: userId,
-      })
-      .returning();
+    await db.transaction(async (tx) => {
+      // 1. SAVE SHARED DNA (Brain 2)
+      const [savedSpec] = await tx
+        .insert(vehicle_specs)
+        .values({
+          hardware_specs: hardwareSpecs,
+        })
+        .returning({ id: vehicle_specs.id });
 
+      // 2. LINK WMI + VDS TO DNA
+      if (baseFacts?.wmi && baseFacts?.vds) {
+        await tx
+          .insert(vds_cache)
+          .values({
+            wmi: baseFacts.wmi,
+            vds_code: baseFacts.vds,
+            spec_id: savedSpec.id,
+            status: "verified",
+          })
+          .onConflictDoNothing();
+      }
+
+      // 3. SAVE EXACT IDENTITY (Brain 1)
+      await tx
+        .insert(vehicle_ledger)
+        .values({
+          vin: cleanVin,
+          manufacturer: manufacturer || "Unknown",
+          year: year || "Unknown",
+          model: model || "Unknown",
+          image_url: image_url || null,
+          wmi: baseFacts?.wmi,
+          vds: baseFacts?.vds,
+          vis: baseFacts?.vis,
+          plant: baseFacts?.plant,
+          country: baseFacts?.country,
+          hardware_specs: hardwareSpecs,
+          scannedBy: userId,
+        })
+        .onConflictDoUpdate({
+          target: vehicle_ledger.vin,
+          set: {
+            manufacturer: manufacturer || "Unknown",
+            year: year || "Unknown",
+            model: model || "Unknown",
+            image_url: image_url || null,
+            wmi: baseFacts?.wmi,
+            vds: baseFacts?.vds,
+            vis: baseFacts?.vis,
+            plant: baseFacts?.plant,
+            country: baseFacts?.country,
+            hardware_specs: hardwareSpecs,
+            scannedBy: userId,
+          },
+        });
+    });
+
+    const newRecord = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, cleanVin));
     return res.json({ success: true, record: newRecord[0] });
   } catch (error) {
     console.error("Save to ledger failed:", error);

@@ -9,20 +9,24 @@ interface VerificationFormProps {
 }
 
 export default function VerificationForm({ scanData, initialSpecs, onSuccess, onCancel }: VerificationFormProps) {
+  const cachedSpecs = scanData?.data?.vehicle_specs?.hardware_specs;
+  const [aiDraft, setAiDraft] = useState<any | null>(cachedSpecs || initialSpecs?.hardware_specs || null);
   const [modelInput, setModelInput] = useState(initialSpecs?.model || "");
-  const [aiDraft, setAiDraft] = useState<any | null>(initialSpecs?.hardware_specs || null);
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string>("");
   const [, setFetchingImages] = useState(false);
+  const [isExistingRecord, setIsExistingRecord] = useState(false);
   // BULLETPROOF EXTRACTION
   const extracted = scanData?.extractedData || scanData?.data?.vds_cache || {};
+  const wmi = extracted?.wmi || "Unknown";
+  // Ensure we catch the 6-char code from the backend
+  const vds = extracted?.vds_code || scanData?.data?.vds_cache?.vds_code || "Unknown";
   const manufacturer = extracted?.manufacturer || extracted?.wmi || "Unknown";
   const rawYear = extracted?.year || "Unknown";
-  const wmi = extracted?.wmi || "Unknown";
-  const vds = extracted?.vds_code || extracted?.vds || "Unknown";
+
   const vinToSave = scanData?.vin || scanData?.data?.vehicle_spec?.vin || "";
 
   // MANUAL YEAR STATE
@@ -32,6 +36,7 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
   // GENERATE YEARS ARRAY (Current Year down to 1991)
   const currentYear = new Date().getFullYear();
   const yearOptions = Array.from({ length: currentYear - 1991 + 1 }, (_, i) => currentYear - i);
+  const API_URL = import.meta.env.VITE_BACKEND_URL;
 
   const handleGenerateAI = async () => {
     if (!modelInput) return setError("Please enter the vehicle model.");
@@ -43,7 +48,7 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
 
     try {
       // 1. Fetch AI Specs
-      const res = await fetch("http://localhost:3000/api/v1/vin/generate-draft", {
+      const res = await fetch(`${API_URL}/api/v1/vin/generate-draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -79,7 +84,7 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
     setError("");
 
     try {
-      const res = await fetch("http://localhost:3000/api/v1/vin/log", {
+      const res = await fetch(`${API_URL}/api/v1/vin/log`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -89,7 +94,7 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
           year: finalYear,
           model: modelInput,
           hardwareSpecs: aiDraft,
-          baseFacts: { wmi, vds },
+          baseFacts: { wmi, vds }, // This sends the 6-char VDS to Brain 2
           image_url: selectedImage,
         }),
       });
@@ -168,13 +173,15 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
               className="w-full p-3 border rounded mt-1 font-normal focus:outline-blue-500"
             />
           </label>
-          <button
-            onClick={handleGenerateAI}
-            disabled={processing || !modelInput || (rawYear === "Unknown" && !manualYear)}
-            className="w-full bg-blue-600 text-white px-4 py-3 rounded font-bold disabled:bg-slate-400 hover:bg-blue-700 transition"
-          >
-            {processing ? "Generating..." : "Generate Specs Draft (AI)"}
-          </button>
+          {!aiDraft && (
+            <button
+              onClick={handleGenerateAI}
+              disabled={processing || !modelInput || (rawYear === "Unknown" && !manualYear)}
+              className="w-full bg-blue-600 text-white px-4 py-3 rounded font-bold disabled:bg-slate-400 hover:bg-blue-700 transition"
+            >
+              {processing ? "Generating..." : "Generate Specs Draft (AI)"}
+            </button>
+          )}
           {error && <div className="text-red-600 text-sm font-bold bg-red-50 p-3 rounded border border-red-200">{error}</div>}
         </div>
       </div>
@@ -244,42 +251,36 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
 
             <div className="p-4 border rounded bg-blue-50/30">
               <h4 className="font-bold text-blue-700 mb-3">Transmission</h4>
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-bold text-slate-500">
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="text-xs font-bold text-slate-500 flex flex-col">
                   Gearbox
-                  <input
-                    type="text"
+                  <select
                     value={aiDraft.transmission?.gearbox || ""}
                     onChange={(e) => updateDraft("transmission", "gearbox", e.target.value)}
-                    className="w-full p-2 border rounded font-normal mt-1"
-                  />
+                    className="w-full p-2 border rounded font-normal mt-1 bg-white"
+                  >
+                    <option value="">Select Gearbox</option>
+                    <option value="Automatic">Automatic</option>
+                    <option value="Manual">Manual</option>
+                    <option value="CVT">CVT</option>
+                    <option value="Dual Clutch">Dual Clutch</option>
+                  </select>
                 </label>
-                <label className="text-xs font-bold text-slate-500">
+
+                <label className="text-xs font-bold text-slate-500 flex flex-col">
                   Type
-                  <input
-                    type="text"
+                  <select
                     value={aiDraft.transmission?.type || ""}
                     onChange={(e) => updateDraft("transmission", "type", e.target.value)}
-                    className="w-full p-2 border rounded font-normal mt-1"
-                  />
-                </label>
-                <label className="text-xs font-bold text-slate-500">
-                  Speeds
-                  <input
-                    type="number"
-                    value={aiDraft.transmission?.speeds || ""}
-                    onChange={(e) => updateDraft("transmission", "speeds", parseInt(e.target.value))}
-                    className="w-full p-2 border rounded font-normal mt-1"
-                  />
-                </label>
-                <label className="text-xs font-bold text-slate-500">
-                  Drive Type
-                  <input
-                    type="text"
-                    value={aiDraft.transmission?.driveType || ""}
-                    onChange={(e) => updateDraft("transmission", "driveType", e.target.value)}
-                    className="w-full p-2 border rounded font-normal mt-1"
-                  />
+                    className="w-full p-2 border rounded font-normal mt-1 bg-white"
+                  >
+                    <option value="">Select Type</option>
+                    <option value="FWD">FWD</option>
+                    <option value="RWD">RWD</option>
+                    <option value="AWD">AWD</option>
+                    <option value="4WD">4WD</option>
+                  </select>
                 </label>
               </div>
             </div>

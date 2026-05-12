@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-
 import { scanVin, type ScanResponse } from "../api/vinService";
 
 const RegionToggle = ({ region, onRegionChange }: { region: string; onRegionChange: (r: string) => void }) => {
@@ -32,7 +31,6 @@ const SearchBox = ({ region, vin, setVin, error, setError, onDecode, loading }: 
   };
 
   return (
-    // Added form tag to allow "Enter" key submissions
     <form
       onSubmit={(e) => {
         e.preventDefault();
@@ -56,7 +54,7 @@ const SearchBox = ({ region, vin, setVin, error, setError, onDecode, loading }: 
   );
 };
 
-export default function Scanner({ onScanComplete }: { onScanComplete: (res: ScanResponse) => void }) {
+export default function Scanner({ onScanComplete }: { onScanComplete: (res: ScanResponse & { vin: string }) => void }) {
   const [region, setRegion] = useState("asean");
   const [vin, setVin] = useState("");
   const [error, setError] = useState("");
@@ -68,7 +66,12 @@ export default function Scanner({ onScanComplete }: { onScanComplete: (res: Scan
       return;
     }
 
-    if (vin.length !== 17) {
+    const cleanVin = vin
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+
+    if (cleanVin.length !== 17) {
       setError("ISO VIN must be exactly 17 characters.");
       return;
     }
@@ -77,15 +80,13 @@ export default function Scanner({ onScanComplete }: { onScanComplete: (res: Scan
     setError("");
 
     try {
-      // 2. Use the imported function directly
-      const result = await scanVin(vin);
+      const result = await scanVin(cleanVin);
 
-      // 3. Inject the VIN back into the payload so the ledger can save it
-      result.vin = vin;
+      // Merge the sanitized VIN into the result safely to avoid mutating the strict response interface
+      const payload = { ...result, vin: cleanVin };
 
-      onScanComplete(result);
+      onScanComplete(payload);
     } catch (err: any) {
-      // 4. Standard fetch error handling
       setError(err.message || "Network error. Check backend connection.");
     } finally {
       setLoading(false);

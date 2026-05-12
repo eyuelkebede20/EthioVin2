@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1777489084749,
-      "tag": "0000_public_lightspeed",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1777507718827,
-      "tag": "0001_secret_magdalene",
+      "when": 1778589754127,
+      "tag": "0000_ordinary_dark_beast",
       "breakpoints": true
     }
   ]
