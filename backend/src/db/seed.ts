@@ -66,7 +66,6 @@ async function seedDatabase() {
       try {
         const url = `https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMake/${make}?format=json`;
 
-        // Added a 10-second timeout to prevent hanging connections
         const response = await axios.get(url, { timeout: 10000 });
         const modelsData = response.data.Results;
 
@@ -80,22 +79,34 @@ async function seedDatabase() {
           model: item.Model_Name.trim().toUpperCase(),
         }));
 
+        // Deduplicate in memory
         const uniqueModels = Array.from(new Set(formattedModels.map((m: any) => m.model))).map((modelName) => ({ make, model: modelName as string }));
 
-        // Insert in chunks of 500 to prevent database parameter limits on shared hosting
-        const CHUNK_SIZE = 500;
+        // Dropped chunk size to 50 for strict shared hosting environments
+        const CHUNK_SIZE = 50;
         for (let i = 0; i < uniqueModels.length; i += CHUNK_SIZE) {
           const chunk = uniqueModels.slice(i, i + CHUNK_SIZE);
-          await db.insert(nhtsa_models).values(chunk).onConflictDoNothing();
+
+          try {
+            // Removed onConflictDoNothing() since there is no unique index to conflict with
+            await db.insert(nhtsa_models).values(chunk);
+          } catch (dbError: any) {
+            console.error(`\n❌ FATAL DB ERROR while inserting ${make}:`);
+            // This will print the actual reason (e.g. "out of memory" or "syntax error")
+            console.error(dbError.cause?.message || dbError.message);
+            throw dbError; // Stop the script so you can read it
+          }
         }
 
         console.log(`✅ ${make} seeded (${uniqueModels.length} models).`);
       } catch (reqError: any) {
-        // Catch the error for this specific make and continue to the next one
-        console.error(`❌ Error processing ${make}: ${reqError.message}. Skipping.`);
+        if (reqError.cause) {
+          // Ignore the DB throws here so it stops the whole script, but catch network errors
+          throw reqError;
+        }
+        console.error(`❌ Network error fetching ${make}: ${reqError.message}. Skipping.`);
       }
 
-      // Wait 1.5 seconds before hitting the API again to prevent rate-limiting/ECONNRESET
       await delay(1500);
     }
 
