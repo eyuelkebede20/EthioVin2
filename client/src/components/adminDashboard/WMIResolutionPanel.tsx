@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 const IMPORT_COUNTRIES = [
   { code: "JP", name: "Japan", flag: "🇯🇵" },
   { code: "AE", name: "United Arab Emirates", flag: "🇦🇪" },
@@ -25,8 +25,8 @@ export default function WMIResolutionPanel() {
   const fetchData = async () => {
     try {
       const [wmiRes, mfgRes] = await Promise.all([
-        fetch("http://localhost:3000/api/v1/admin/wmi/unknown", { credentials: "include" }),
-        fetch("http://localhost:3000/api/v1/admin/wmi/manufacturers", { credentials: "include" }),
+        fetch(`${BACKEND_URL}/api/v1/admin/wmi/unknown`, { credentials: "include" }),
+        fetch(`${BACKEND_URL}/api/v1/admin/wmi/manufacturers`, { credentials: "include" }),
       ]);
 
       if (wmiRes.ok) setUnknowns(await wmiRes.json());

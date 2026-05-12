@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ScanResponse } from "../api/vinService";
-
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 interface VerificationFormProps {
   scanData: ScanResponse;
   initialSpecs?: any;
@@ -57,7 +57,7 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
       if (res.ok) setAiDraft(data.draft);
 
       // 2. Fetch Images
-      const imgRes = await fetch("http://localhost:3000/api/v1/vin/images", {
+      const imgRes = await fetch(`${BACKEND_URL}/api/v1/vin/images`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
