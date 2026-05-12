@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { db } from "../db";
-import { wmi_mapping } from "../db/schema";
+import { wmi_mapping } from "../db/schema.ts";
 import { eq } from "drizzle-orm";
 
 export const getUnknownWMIs = async (req: Request, res: Response) => {

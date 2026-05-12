@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { auth } from "../auth";
+import { auth } from "../auth.ts";
 
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {

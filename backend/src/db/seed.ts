@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { db } from "./index";
-import { nhtsa_models, wmi_mapping } from "./schema";
+import { db } from "./index.ts";
+import { nhtsa_models, wmi_mapping } from "./schema.ts";
 import axios from "axios";
 
 const WMI_SEED_DATA = [

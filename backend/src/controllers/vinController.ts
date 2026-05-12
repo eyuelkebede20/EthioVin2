@@ -1,9 +1,9 @@
 import { db } from "../db";
-import { vds_cache, wmi_mapping, nhtsa_models, vehicle_specs, verification_log, vehicle_ledger } from "../db/schema";
+import { vds_cache, wmi_mapping, nhtsa_models, vehicle_specs, verification_log, vehicle_ledger } from "../db/schema.ts";
 import { and, eq, desc, ilike } from "drizzle-orm";
 import type { Request, Response } from "express";
-import { generateVehicleSpecsDraft } from "../services/aiService";
-import { sanitizeVin } from "../utils/helpers";
+import { generateVehicleSpecsDraft } from "../services/aiService.ts";
+import { sanitizeVin } from "../utils/helpers.ts";
 
 export const submitVerifiedSpec = async (req: Request, res: Response) => {
   // Use the ID injected by the requireAuth middleware instead of hitting the DB again
