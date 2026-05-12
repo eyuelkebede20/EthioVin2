@@ -16,7 +16,7 @@ export const auth = betterAuth({
     },
   }),
   baseURL: process.env.BACKEND_URL,
-  trustedOrigins: ["https://ethiovin.senaycreatives.com"],
+  trustedOrigins: [`${process.env.FRONTEND_URL}`],
   emailAndPassword: {
     enabled: true,
   },

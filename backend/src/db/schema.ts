@@ -12,7 +12,7 @@ export const wmi_mapping = pgTable("wmi_mapping", {
 });
 
 export const nhtsa_models = pgTable("nhtsa_models", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   make: varchar("make", { length: 100 }).notNull(),
   model: varchar("model", { length: 100 }).notNull(),
 });
