@@ -4,6 +4,7 @@ import axios from "axios";
 const API_URL = import.meta.env.VITE_BACKEND_URL;
 
 export interface ScanResponse {
+  vin: string;
   hit: boolean;
   patientExists: boolean;
   data?: any; // Contains hardware_specs if hit is true

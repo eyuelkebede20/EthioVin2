@@ -18,8 +18,7 @@ export default function VerificationForm({ scanData, initialSpecs, onSuccess, on
   const [images, setImages] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string>("");
   const [, setFetchingImages] = useState(false);
-  const [isExistingRecord, setIsExistingRecord] = useState(false);
-  // BULLETPROOF EXTRACTION
+
   const extracted = scanData?.extractedData || scanData?.data?.vds_cache || {};
   const wmi = extracted?.wmi || "Unknown";
   // Ensure we catch the 6-char code from the backend

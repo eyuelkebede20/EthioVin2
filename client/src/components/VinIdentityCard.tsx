@@ -12,7 +12,7 @@ export default function VinIdentityCard({ vin, manufacturer, year, country }: Vi
 
   const wmi = vin.substring(0, 3);
   const vds = vin.substring(3, 8);
-  const checkDigit = vin.substring(8, 9);
+
   const visYear = vin.substring(9, 10);
   const plant = vin.substring(10, 11);
   const serial = vin.substring(11, 17);
