@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import vinRoutes from "./routes/vinRoutes.ts";
 import { toNodeHandler } from "better-auth/node";
-import { auth } from "./auth";
+import { auth } from "./auth.ts";
 import adminRoutes from "./routes/adminRoutes.ts";
 import "dotenv/config";
 // Add this below your vinRoutes
