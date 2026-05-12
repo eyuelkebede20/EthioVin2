@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { db } from "../db/index.ts";
 import { vds_cache, wmi_mapping, nhtsa_models, vehicle_specs, verification_log, vehicle_ledger } from "../db/schema.ts";
 import { and, eq, desc, ilike } from "drizzle-orm";
 import type { Request, Response } from "express";
