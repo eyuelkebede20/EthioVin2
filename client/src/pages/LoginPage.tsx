@@ -82,7 +82,9 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={submitting}
-          className={`p-3 text-white rounded-lg font-bold transition disabled:opacity-60 ${isRegister ? "bg-green-600 hover:bg-green-700" : "bg-slate-800 hover:bg-slate-900"}`}
+          className={`p-3 text-white rounded-lg font-bold shadow-lg transition disabled:opacity-60 ${
+            isRegister ? "bg-green-600 hover:bg-green-700 shadow-green-500/30" : "bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 shadow-orange-500/40"
+          }`}
         >
           {submitting ? "Please wait…" : isRegister ? "Sign Up" : "Sign In"}
         </button>
@@ -93,7 +95,7 @@ export default function LoginPage() {
           setIsRegister(!isRegister);
           setError("");
         }}
-        className="w-full mt-6 text-sm font-bold text-blue-600 hover:text-blue-800"
+        className="w-full mt-6 text-sm font-bold text-orange-600 hover:text-orange-800"
       >
         {isRegister ? "Already have an account? Sign In" : "Need an account? Sign Up"}
       </button>

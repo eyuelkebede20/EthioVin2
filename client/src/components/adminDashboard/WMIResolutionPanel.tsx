@@ -83,7 +83,7 @@ export default function WMIResolutionPanel() {
               value={newMfg}
               onChange={(e) => setNewMfg(e.target.value)}
               placeholder="e.g. Rivian"
-              className="w-full p-3 border border-slate-300 rounded mb-6 focus:outline-blue-500"
+              className="w-full p-3 border border-slate-300 rounded mb-6 focus:outline-orange-500"
               autoFocus
               onKeyDown={(e) => e.key === "Enter" && handleAddManufacturer()}
             />
@@ -97,7 +97,7 @@ export default function WMIResolutionPanel() {
               >
                 Cancel
               </button>
-              <button onClick={handleAddManufacturer} disabled={!newMfg.trim()} className="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 disabled:bg-slate-400 transition">
+              <button onClick={handleAddManufacturer} disabled={!newMfg.trim()} className="px-4 py-2 bg-orange-600 text-white rounded font-bold hover:bg-orange-700 disabled:bg-slate-400 transition">
                 Save
               </button>
             </div>
@@ -144,7 +144,7 @@ function WMIUpdateForm({ wmi, mfgList, onSubmit }: { wmi: string; mfgList: strin
 
       <button
         onClick={submit}
-        className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 disabled:bg-slate-400 transition"
+        className="bg-orange-600 text-white px-6 py-2 rounded font-bold hover:bg-orange-700 disabled:bg-slate-400 transition"
         disabled={!manufacturer || !country || submitting}
       >
         {submitting ? "Saving…" : "Save"}

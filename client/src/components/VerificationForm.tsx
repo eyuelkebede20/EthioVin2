@@ -143,7 +143,7 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
                 <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg w-2/3">
                   <div className="text-[10px] font-bold text-amber-700 uppercase mb-2 tracking-wide flex justify-between items-center">
                     <span>⚠️ Unknown WMI ({wmi})</span>
-                    <button type="button" onClick={() => setIsAddMfgOpen(true)} className="text-blue-600 hover:underline">
+                    <button type="button" onClick={() => setIsAddMfgOpen(true)} className="text-orange-600 hover:underline">
                       + Add Make
                     </button>
                   </div>
@@ -204,7 +204,7 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
               value={modelInput}
               onChange={(e) => setModelInput(e.target.value)}
               placeholder="e.g. RAV4, Model Y"
-              className="w-full p-3 border rounded mt-1 font-normal focus:outline-blue-500"
+              className="w-full p-3 border rounded mt-1 font-normal focus:outline-orange-500"
             />
           </label>
 
@@ -212,7 +212,7 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
             <button
               onClick={handleGenerateAI}
               disabled={processing}
-              className="w-full bg-blue-600 text-white px-4 py-3 rounded font-bold disabled:bg-slate-400 hover:bg-blue-700 transition"
+              className="w-full bg-orange-600 text-white px-4 py-3 rounded font-bold disabled:bg-slate-400 hover:bg-orange-700 transition"
             >
               {processing ? "Generating…" : aiDraft ? "Regenerate Specs (AI)" : "Generate Specs Draft (AI)"}
             </button>
@@ -234,7 +234,7 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
                 type="button"
                 onClick={() => setSelectedImage(imgUrl)}
                 className={`cursor-pointer rounded-xl overflow-hidden border-4 transition-all ${
-                  selectedImage === imgUrl ? "border-blue-500 scale-105 shadow-lg" : "border-transparent opacity-70 hover:opacity-100"
+                  selectedImage === imgUrl ? "border-orange-500 scale-105 shadow-lg" : "border-transparent opacity-70 hover:opacity-100"
                 }`}
               >
                 <img src={imgUrl} alt={`Option ${idx + 1}`} className="w-full h-32 object-cover" />
@@ -294,7 +294,7 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
               value={newMfgName}
               onChange={(e) => setNewMfgName(e.target.value)}
               placeholder="e.g. Rivian"
-              className="w-full p-3 border border-slate-300 rounded mb-6 focus:outline-blue-500"
+              className="w-full p-3 border border-slate-300 rounded mb-6 focus:outline-orange-500"
               autoFocus
               onKeyDown={(e) => e.key === "Enter" && handleAddManufacturer()}
             />
@@ -308,7 +308,7 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
               >
                 Cancel
               </button>
-              <button onClick={handleAddManufacturer} disabled={!newMfgName.trim()} className="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700 disabled:bg-slate-400 transition">
+              <button onClick={handleAddManufacturer} disabled={!newMfgName.trim()} className="px-4 py-2 bg-orange-600 text-white rounded font-bold hover:bg-orange-700 disabled:bg-slate-400 transition">
                 Add
               </button>
             </div>

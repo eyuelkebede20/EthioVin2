@@ -16,7 +16,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-slate-100">
+      <div className="min-h-screen bg-base-200">
         {/* You will need to update Navbar to use <Link to="..."> instead of onViewChange state */}
         <Navbar isAdmin={isAdmin} />
         <main>

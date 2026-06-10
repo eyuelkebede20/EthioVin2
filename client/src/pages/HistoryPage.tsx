@@ -70,7 +70,7 @@ export default function HistoryPage() {
     return (
       <div className="p-10 text-center">
         <h2 className="text-xl font-bold text-red-500">No data found in memory.</h2>
-        <button onClick={() => navigate("/scan")} className="mt-4 text-blue-500 underline">
+        <button onClick={() => navigate("/scan")} className="mt-4 text-orange-500 underline">
           Go back to Scanner
         </button>
       </div>
@@ -87,7 +87,7 @@ export default function HistoryPage() {
           </h1>
           <p className="text-slate-500 font-mono mt-1 text-lg">VIN: {vin}</p>
         </div>
-        <button onClick={() => navigate("/scan")} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 transition">
+        <button onClick={() => navigate("/scan")} className="bg-orange-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-700 transition">
           Scan New VIN
         </button>
       </div>

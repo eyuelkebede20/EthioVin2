@@ -21,7 +21,7 @@ export default function Navbar({ isAdmin }: NavbarProps) {
       <div className="flex items-center gap-6">
         {/* Logo Placeholder */}
         <div className="flex items-center gap-2 font-bold text-xl tracking-wider">
-          <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-mono">EV</div>
+          <div className="w-8 h-8 bg-orange-600 rounded flex items-center justify-center font-mono">EV</div>
           EthioVin
         </div>
 

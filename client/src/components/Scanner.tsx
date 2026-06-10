@@ -4,10 +4,10 @@ import { scanVin, type ScanResponse } from "../api/vinService";
 const RegionToggle = ({ region, onRegionChange }: { region: string; onRegionChange: (r: string) => void }) => {
   return (
     <div className="inline-flex bg-slate-200 p-1 rounded-xl mb-6">
-      <button onClick={() => onRegionChange("asean")} className={`px-6 py-2 rounded-lg text-sm font-bold transition ${region === "asean" ? "bg-white shadow text-blue-600" : "text-slate-600"}`}>
+      <button onClick={() => onRegionChange("asean")} className={`px-6 py-2 rounded-lg text-sm font-bold transition ${region === "asean" ? "bg-white shadow text-orange-600" : "text-slate-600"}`}>
         ASEAN / GLOBAL (17 Digits)
       </button>
-      <button onClick={() => onRegionChange("japan")} className={`px-6 py-2 rounded-lg text-sm font-bold transition ${region === "japan" ? "bg-white shadow text-blue-600" : "text-slate-600"}`}>
+      <button onClick={() => onRegionChange("japan")} className={`px-6 py-2 rounded-lg text-sm font-bold transition ${region === "japan" ? "bg-white shadow text-orange-600" : "text-slate-600"}`}>
         JAPAN (Chassis No.)
       </button>
     </div>
@@ -54,9 +54,13 @@ const SearchBox = ({ region, vin, setVin, error, setError, onDecode, loading }: 
         onChange={handleInputChange}
         disabled={loading}
         placeholder={region === "asean" ? "Enter 17-digit VIN..." : "e.g. GDH201-1234567"}
-        className={`w-full p-5 text-lg border-2 rounded-2xl outline-none transition-all ${error ? "border-red-400" : "border-slate-200 focus:border-blue-500"} ${loading ? "opacity-50" : ""}`}
+        className={`w-full p-5 text-lg border-2 rounded-2xl outline-none transition-all ${error ? "border-red-400" : "border-slate-200 focus:border-orange-500"} ${loading ? "opacity-50" : ""}`}
       />
-      <button type="submit" disabled={loading} className="absolute right-3 top-3 bottom-3 bg-blue-600 text-white px-8 rounded-xl font-bold hover:bg-blue-700 transition disabled:bg-blue-400">
+      <button
+        type="submit"
+        disabled={loading}
+        className="absolute right-3 top-3 bottom-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white px-8 rounded-xl font-bold hover:from-orange-600 hover:to-amber-600 shadow-lg shadow-orange-500/40 transition disabled:opacity-60"
+      >
         {loading ? "DECODING..." : "DECODE"}
       </button>
       {error && <p className="text-red-500 text-sm mt-3 font-medium">{error}</p>}
