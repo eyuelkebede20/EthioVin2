@@ -9,16 +9,13 @@
     // See also https://aka.ms/tsconfig/module
     "module": "nodenext",
     "target": "esnext",
-    "types": [],
-    // For nodejs:
-    // "lib": ["esnext"],
-    // "types": ["node"],
-    // and npm install -D @types/node
+    "types": ["node"],
 
-    // Other Outputs
-    "sourceMap": true,
-    "declaration": true,
-    "declarationMap": true,
+    // We run via `tsx` (no build step) and import sibling modules with their
+    // `.ts` extension, so allow that and never emit JS — `tsc --noEmit` is used
+    // purely as a typechecker (`npm run typecheck`).
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
 
     // Stricter Typechecking Options
     "noUncheckedIndexedAccess": true,

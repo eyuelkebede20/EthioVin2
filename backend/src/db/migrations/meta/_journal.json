@@ -15,6 +15,13 @@
       "when": 1778597365394,
       "tag": "0001_huge_multiple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780989169580,
+      "tag": "0002_smooth_felicia_hardy",
+      "breakpoints": true
     }
   ]
 }

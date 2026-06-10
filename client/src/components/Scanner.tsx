@@ -14,7 +14,17 @@ const RegionToggle = ({ region, onRegionChange }: { region: string; onRegionChan
   );
 };
 
-const SearchBox = ({ region, vin, setVin, error, setError, onDecode, loading }: any) => {
+interface SearchBoxProps {
+  region: string;
+  vin: string;
+  setVin: (v: string) => void;
+  error: string;
+  setError: (v: string) => void;
+  onDecode: () => void;
+  loading: boolean;
+}
+
+const SearchBox = ({ region, vin, setVin, error, setError, onDecode, loading }: SearchBoxProps) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.toUpperCase();
 
@@ -86,8 +96,8 @@ export default function Scanner({ onScanComplete }: { onScanComplete: (res: Scan
       const payload = { ...result, vin: cleanVin };
 
       onScanComplete(payload);
-    } catch (err: any) {
-      setError(err.message || "Network error. Check backend connection.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Network error. Check backend connection.");
     } finally {
       setLoading(false);
     }

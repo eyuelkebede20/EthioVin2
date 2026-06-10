@@ -16,15 +16,10 @@ const router = Router();
 // Anyone logged in can scan
 router.post("/scan", requireAuth, processVin);
 
-// Only admins and diagnosticians can submit new specs
-router.post("/verify", requireRole(["super_admin", "garage_admin", "diagnostician"]), submitVerifiedSpec);
-
-// Only super admins can manage WMI conflicts
-router.get("/conflicts", requireRole(["super_admin"]), getConflicts);
-router.post("/resolve", requireRole(["super_admin"]), resolveConflict);
-
-router.post("/generate-draft", requireRole(["super_admin", "garage_admin", "diagnostician"]), externalApiLimiter, requireAuth, generateDraft);
-router.post("/log", requireRole(["super_admin", "garage_admin", "diagnostician"]), requireAuth, saveVehicleToLedger);
-
-router.post("/images", requireRole(["super_admin", "garage_admin", "diagnostician"]), externalApiLimiter, requireAuth, getVehicleImages);
+router.post("/verify", requireRole("super_admin", "garage_admin", "diagnostician"), submitVerifiedSpec);
+router.get("/conflicts", requireRole("super_admin"), getConflicts);
+router.post("/resolve", requireRole("super_admin"), resolveConflict);
+router.post("/generate-draft", requireRole("super_admin", "garage_admin", "diagnostician"), externalApiLimiter, generateDraft);
+router.post("/log", requireRole("super_admin", "garage_admin", "diagnostician"), saveVehicleToLedger);
+router.post("/images", requireRole("super_admin", "garage_admin", "diagnostician"), externalApiLimiter, getVehicleImages);
 export default router;

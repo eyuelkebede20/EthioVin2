@@ -1,7 +1,7 @@
 import { Car, Gauge, Cpu, Fuel, Settings, Ruler, ShieldCheck, Wrench, Cog, Truck, Zap, CircleDot } from "lucide-react";
 
 interface VehicleSpecsCardProps {
-  specs: Record<string, any>;
+  specs: Record<string, unknown>;
 }
 
 export default function VehicleSpecsCard({ specs }: VehicleSpecsCardProps) {
@@ -22,7 +22,7 @@ export default function VehicleSpecsCard({ specs }: VehicleSpecsCardProps) {
   const categoryConfig: Record<
     string,
     {
-      icon: any;
+      icon: React.ComponentType<{ className?: string }>;
       gradient: string;
       light: string;
       iconColor: string;

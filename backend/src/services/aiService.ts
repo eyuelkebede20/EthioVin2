@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? "" });
 
 const vehicleSpecSchema = {
   type: Type.OBJECT,
@@ -129,13 +129,5 @@ Rules:
     marketInformation: { msrp: "", ...(parsed.marketInformation || {}) },
   };
 
-  try {
-    if (typeof normalizeSpecs === "function") {
-      return normalizeSpecs(safeDraft);
-    }
-    return safeDraft;
-  } catch (err) {
-    console.error("Crash during normalization. Data was:", safeDraft);
-    throw new Error("Data normalization failed");
-  }
+  return safeDraft;
 };

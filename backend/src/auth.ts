@@ -15,10 +15,19 @@ export const auth = betterAuth({
       verification: schema.verification,
     },
   }),
-  baseURL: process.env.BACKEND_URL,
-  trustedOrigins: [`${process.env.FRONTEND_URL}`],
+  baseURL: process.env.BETTER_AUTH_URL,
+  trustedOrigins: process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [],
   emailAndPassword: {
     enabled: true,
+    minPasswordLength: 8,
+    maxPasswordLength: 128,
   },
+  // Keep this — it's what surfaces req.user.role.
+  user: {
+    additionalFields: {
+      role: { type: "string", input: false },
+    },
+  },
+  // No adminRoles — your requireRole middleware handles authorization.
   plugins: [admin()],
 });

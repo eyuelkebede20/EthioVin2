@@ -1,51 +1,42 @@
 import type { Request, Response } from "express";
 import { db } from "../db/index.ts";
 import { wmi_mapping } from "../db/schema.ts";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
+import { AppError } from "../middleware/errorHandler.ts";
+import { updateWmiSchema } from "../utils/validation.ts";
 
-export const getUnknownWMIs = async (req: Request, res: Response) => {
-  try {
-    const unknowns = await db.select().from(wmi_mapping).where(eq(wmi_mapping.manufacturer, "Unknown"));
-    return res.json(unknowns);
-  } catch (error) {
-    return res.status(500).json({ error: "Failed to fetch WMIs" });
-  }
+/** WMIs we've seen but can't attribute to a manufacturer yet. */
+export const getUnknownWMIs = async (_req: Request, res: Response) => {
+  const unknowns = await db.select().from(wmi_mapping).where(eq(wmi_mapping.manufacturer, "Unknown"));
+  return res.json(unknowns);
 };
-export const getDistinctManufacturers = async (req: Request, res: Response) => {
-  try {
-    const result = await db.selectDistinct({ manufacturer: wmi_mapping.manufacturer }).from(wmi_mapping).where(isNotNull(wmi_mapping.manufacturer));
 
-    const manufacturers = result.map((r) => r.manufacturer).filter((m) => m !== "Unknown" && m.trim() !== "");
+/** Distinct known manufacturers (excludes "Unknown"/blank), for select menus. */
+export const getDistinctManufacturers = async (_req: Request, res: Response) => {
+  const result = await db.selectDistinct({ manufacturer: wmi_mapping.manufacturer }).from(wmi_mapping).where(isNotNull(wmi_mapping.manufacturer));
 
-    return res.json(manufacturers);
-  } catch (error) {
-    return res.status(500).json({ error: "Failed to fetch manufacturers" });
-  }
+  const manufacturers = result
+    .map((r) => r.manufacturer)
+    .filter((m) => m !== "Unknown" && m.trim() !== "")
+    .sort();
+
+  return res.json(manufacturers);
 };
+
+/**
+ * Attribute a manufacturer (and optional country) to an existing WMI. This only
+ * UPDATEs — new WMIs are seeded by the save path — so a missing WMI is a 404.
+ */
 export const updateWMI = async (req: Request, res: Response) => {
-  const { wmi, manufacturer, country } = req.body;
-  try {
-    await db.update(wmi_mapping).set({ manufacturer, country, updated_at: new Date() }).where(eq(wmi_mapping.wmi, wmi));
-    return res.json({ success: true });
-  } catch (error) {
-    return res.status(500).json({ error: "Failed to update WMI" });
-  }
-};
+  const { wmi, manufacturer, country } = updateWmiSchema.parse(req.body);
 
-export const getManufacturers = async (req: Request, res: Response) => {
-  try {
-    // 1. Use selectDistinct instead of groupBy
-    const results = await db.selectDistinct({ manufacturer: wmi_mapping.manufacturer }).from(wmi_mapping);
+  const updated = await db
+    .update(wmi_mapping)
+    .set({ manufacturer, country: country ?? null, updated_at: new Date() })
+    .where(eq(wmi_mapping.wmi, wmi))
+    .returning({ wmi: wmi_mapping.wmi });
 
-    // 2. Format the array
-    const manufacturers = results
-      .map((r) => r.manufacturer)
-      .filter(Boolean)
-      .sort();
+  if (!updated[0]) throw new AppError(404, "WMI not found");
 
-    return res.json(manufacturers);
-  } catch (error) {
-    console.error("[Admin API] Crash in getManufacturers:", error);
-    return res.status(500).json({ error: "Failed to fetch manufacturers." });
-  }
+  return res.json({ success: true });
 };

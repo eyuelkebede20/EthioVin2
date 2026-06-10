@@ -1,95 +1,53 @@
 import { useEffect, useState } from "react";
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
-
-const IMPORT_COUNTRIES = [
-  { code: "JP", name: "Japan", flag: "🇯🇵" },
-  { code: "AE", name: "United Arab Emirates", flag: "🇦🇪" },
-  { code: "DE", name: "Germany", flag: "🇩🇪" },
-  { code: "CN", name: "China", flag: "🇨🇳" },
-  { code: "IN", name: "India", flag: "🇮🇳" },
-  { code: "KR", name: "South Korea", flag: "🇰🇷" },
-  { code: "US", name: "United States", flag: "🇺🇸" },
-  { code: "GB", name: "United Kingdom", flag: "🇬🇧" },
-];
-
-const INITIAL_MANUFACTURERS = [
-  "Toyota",
-  "Hyundai",
-  "Suzuki",
-  "Nissan",
-  "Jeep",
-  "BYD",
-  "Tesla",
-  "Ford",
-  "Chevrolet",
-  "Kia",
-  "Honda",
-  "BMW",
-  "Mercedes-Benz",
-  "Volkswagen",
-  "Lexus",
-  "Isuzu",
-  "Mitsubishi",
-  "Peugeot",
-  "Renault",
-];
-
-type WMI = { wmi: string; manufacturer: string; country: string };
+import { getUnknownWMIs, getManufacturers, updateWMI, type UnknownWMI } from "../../api/adminService";
+import { ApiError } from "../../api/client";
+import { IMPORT_COUNTRIES, DEFAULT_MANUFACTURERS } from "../../lib/constants";
+import Banner from "../ui/Banner";
 
 export default function WMIResolutionPanel() {
-  const [unknowns, setUnknowns] = useState<WMI[]>([]);
-  const [manufacturers, setManufacturers] = useState<string[]>(INITIAL_MANUFACTURERS);
+  const [unknowns, setUnknowns] = useState<UnknownWMI[]>([]);
+  const [manufacturers, setManufacturers] = useState<string[]>(DEFAULT_MANUFACTURERS);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newMfg, setNewMfg] = useState("");
 
   useEffect(() => {
-    fetchData();
+    (async () => {
+      try {
+        const [wmis, mfgs] = await Promise.all([getUnknownWMIs(), getManufacturers().catch(() => [] as string[])]);
+        setUnknowns(wmis);
+        if (mfgs.length > 0) {
+          setManufacturers(Array.from(new Set([...DEFAULT_MANUFACTURERS, ...mfgs])).sort());
+        }
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : "Failed to load WMI data.");
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  const fetchData = async () => {
-    try {
-      const wmiRes = await fetch(`${BACKEND_URL}/api/v1/admin/wmi/unknown`, { credentials: "include" });
-      if (wmiRes.ok) setUnknowns(await wmiRes.json());
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleUpdate = async (wmi: string, manufacturer: string, country: string) => {
-    // Fixed hardcoded localhost
-    const res = await fetch(`${BACKEND_URL}/api/v1/admin/wmi/update`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ wmi, manufacturer, country }),
-    });
-
-    if (res.ok) {
-      setUnknowns(unknowns.filter((u) => u.wmi !== wmi));
-      if (!manufacturers.includes(manufacturer)) {
-        setManufacturers([...manufacturers, manufacturer]);
-      }
-    } else {
-      alert("Failed to update WMI");
+    setError("");
+    try {
+      await updateWMI({ wmi, manufacturer, country });
+      setUnknowns((prev) => prev.filter((u) => u.wmi !== wmi));
+      if (!manufacturers.includes(manufacturer)) setManufacturers((prev) => [...prev, manufacturer].sort());
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to update WMI.");
     }
   };
 
   const handleAddManufacturer = () => {
     const trimmed = newMfg.trim();
-    if (trimmed && !manufacturers.includes(trimmed)) {
-      setManufacturers((prev) => [...prev, trimmed].sort());
-    }
+    if (trimmed && !manufacturers.includes(trimmed)) setManufacturers((prev) => [...prev, trimmed].sort());
     setNewMfg("");
     setIsModalOpen(false);
   };
 
-  if (loading) return <div className="p-4 bg-white rounded shadow text-slate-500">Loading WMI data...</div>;
+  if (loading) return <div className="p-4 bg-white rounded shadow text-slate-500">Loading WMI data…</div>;
 
   return (
     <div className="bg-white p-6 rounded shadow border border-slate-200">
@@ -99,6 +57,12 @@ export default function WMIResolutionPanel() {
           + Add Manufacturer
         </button>
       </div>
+
+      {error && (
+        <div className="mb-4">
+          <Banner variant="error">{error}</Banner>
+        </div>
+      )}
 
       {unknowns.length === 0 ? (
         <p className="text-green-600 font-bold">No unknown WMIs in the system.</p>
@@ -110,9 +74,8 @@ export default function WMIResolutionPanel() {
         </div>
       )}
 
-      {/* Add Manufacturer Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-xl w-96">
             <h3 className="text-lg font-bold mb-4 text-slate-800">Add New Manufacturer</h3>
             <input
@@ -120,7 +83,7 @@ export default function WMIResolutionPanel() {
               value={newMfg}
               onChange={(e) => setNewMfg(e.target.value)}
               placeholder="e.g. Rivian"
-              className="w-full p-3 border border-slate-300 rounded mb-6 focus:outline-blue-500 font-normal"
+              className="w-full p-3 border border-slate-300 rounded mb-6 focus:outline-blue-500"
               autoFocus
               onKeyDown={(e) => e.key === "Enter" && handleAddManufacturer()}
             />
@@ -146,14 +109,21 @@ export default function WMIResolutionPanel() {
 }
 
 function WMIUpdateForm({ wmi, mfgList, onSubmit }: { wmi: string; mfgList: string[]; onSubmit: (wmi: string, m: string, c: string) => void }) {
-  const [manufacturer, setManufacturer] = useState(mfgList[0] || "");
-  const [country, setCountry] = useState(IMPORT_COUNTRIES[0].name);
+  const [manufacturer, setManufacturer] = useState(mfgList[0] ?? "");
+  const [country, setCountry] = useState(IMPORT_COUNTRIES[0]!.name);
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    setSubmitting(true);
+    await onSubmit(wmi, manufacturer, country);
+    setSubmitting(false);
+  };
 
   return (
     <div className="flex gap-4 items-center p-4 border rounded bg-slate-50">
       <div className="font-mono font-bold text-lg w-16">{wmi}</div>
 
-      <select className="p-2 border rounded flex-1 bg-white cursor-pointer" value={manufacturer} onChange={(e) => setManufacturer(e.target.value)}>
+      <select className="p-2 border rounded flex-1 bg-white" value={manufacturer} onChange={(e) => setManufacturer(e.target.value)}>
         <option value="" disabled>
           Select Manufacturer
         </option>
@@ -164,7 +134,7 @@ function WMIUpdateForm({ wmi, mfgList, onSubmit }: { wmi: string; mfgList: strin
         ))}
       </select>
 
-      <select className="p-2 border rounded flex-1 bg-white cursor-pointer text-base" value={country} onChange={(e) => setCountry(e.target.value)}>
+      <select className="p-2 border rounded flex-1 bg-white" value={country} onChange={(e) => setCountry(e.target.value)}>
         {IMPORT_COUNTRIES.map((c) => (
           <option key={c.code} value={c.name}>
             {c.flag} {c.name}
@@ -173,11 +143,11 @@ function WMIUpdateForm({ wmi, mfgList, onSubmit }: { wmi: string; mfgList: strin
       </select>
 
       <button
-        onClick={() => onSubmit(wmi, manufacturer, country)}
+        onClick={submit}
         className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 disabled:bg-slate-400 transition"
-        disabled={!manufacturer || !country}
+        disabled={!manufacturer || !country || submitting}
       >
-        Save
+        {submitting ? "Saving…" : "Save"}
       </button>
     </div>
   );

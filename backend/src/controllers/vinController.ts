@@ -1,180 +1,47 @@
 import { db } from "../db/index.ts";
 import { vds_cache, wmi_mapping, nhtsa_models, vehicle_specs, verification_log, vehicle_ledger } from "../db/schema.ts";
-import { and, eq, desc, ilike } from "drizzle-orm";
+import { and, eq, ilike } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { generateVehicleSpecsDraft } from "../services/aiService.ts";
-import { sanitizeVin } from "../utils/helpers.ts";
+import { decodeVinYear } from "../utils/decodeVinYear.ts";
+import { AppError } from "../middleware/errorHandler.ts";
+import {
+  scanSchema,
+  saveLedgerSchema,
+  submitVerifiedSpecSchema,
+  resolveConflictSchema,
+  generateDraftSchema,
+  getImagesSchema,
+} from "../utils/validation.ts";
 
-export const submitVerifiedSpec = async (req: Request, res: Response) => {
-  // Use the ID injected by the requireAuth middleware instead of hitting the DB again
-  const admin_id = req.headers["x-user-id"] as string;
-
-  if (!admin_id) return res.status(401).json({ error: "Unauthorized" });
-
-  const { wmi, vds_code, engine_cc, fuel, transmission, body_style } = req.body;
-
-  try {
-    await db.transaction(async (tx) => {
-      // 1. Insert the new/edited specification
-      const newSpec = await tx
-        .insert(vehicle_specs)
-        .values({
-          engine_cc,
-          fuel,
-          transmission,
-          body_style,
-        })
-        .returning({ id: vehicle_specs.id });
-
-      const specId = newSpec[0].id;
-
-      // 2. Log who made this submission/edit
-      await tx.insert(verification_log).values({
-        wmi,
-        vds_code,
-        admin_id,
-        proposed_spec_id: specId,
-      });
-
-      // 3. Upsert the Cache.
-      const existingCache = await tx
-        .select()
-        .from(vds_cache)
-        .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)));
-
-      if (existingCache.length > 0) {
-        await tx
-          .update(vds_cache)
-          .set({ spec_id: specId, updated_at: new Date() })
-          .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)));
-      } else {
-        await tx.insert(vds_cache).values({
-          wmi,
-          vds_code,
-          spec_id: specId,
-          status: "verified",
-        });
-      }
-    });
-
-    return res.json({ success: true, message: "Specification saved successfully." });
-  } catch (error) {
-    console.error("Failed to submit spec:", error);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-};
-
-export const getConflicts = async (req: Request, res: Response) => {
-  try {
-    const conflicts = await db
-      .select()
-      .from(vds_cache)
-      .where(eq(vds_cache.status, "conflict"))
-      .leftJoin(verification_log, and(eq(vds_cache.wmi, verification_log.wmi), eq(vds_cache.vds_code, verification_log.vds_code)))
-      .leftJoin(vehicle_specs, eq(verification_log.proposed_spec_id, vehicle_specs.id));
-
-    return res.json(conflicts);
-  } catch (error) {
-    return res.status(500).json({ error: "Failed to fetch conflicts" });
-  }
-};
-
-export const resolveConflict = async (req: Request, res: Response) => {
-  const { wmi, vds_code, selected_spec_id } = req.body;
-
-  try {
-    await db.transaction(async (tx) => {
-      await tx
-        .update(vds_cache)
-        .set({ spec_id: selected_spec_id, status: "verified", updated_at: new Date() })
-        .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)));
-    });
-
-    return res.json({ success: true });
-  } catch (error) {
-    return res.status(500).json({ error: "Failed to resolve conflict" });
-  }
-};
-
-function decodeVinYear(vin: string): string {
-  if (!vin || vin.length !== 17) return "Unknown";
-
-  const yearChar = vin.charAt(9).toUpperCase();
-
-  // If the manufacturer uses a 0 or other invalid character as a filler
-  if (yearChar === "0" || yearChar === "U" || yearChar === "Z") return "Unknown";
-
-  const yearMap: Record<string, number> = {
-    A: 1980,
-    B: 1981,
-    C: 1982,
-    D: 1983,
-    E: 1984,
-    F: 1985,
-    G: 1986,
-    H: 1987,
-    J: 1988,
-    K: 1989,
-    L: 1990,
-    M: 1991,
-    N: 1992,
-    P: 1993,
-    R: 1994,
-    S: 1995,
-    T: 1996,
-    V: 1997,
-    W: 1998,
-    X: 1999,
-    Y: 2000,
-    "1": 2001,
-    "2": 2002,
-    "3": 2003,
-    "4": 2004,
-    "5": 2005,
-    "6": 2006,
-    "7": 2007,
-    "8": 2008,
-    "9": 2009,
-  };
-
-  let baseYear = yearMap[yearChar];
-  if (!baseYear) return "Unknown";
-
-  const currentYear = new Date().getFullYear();
-  if (baseYear + 30 <= currentYear + 2) {
-    baseYear += 30;
-  }
-
-  return baseYear.toString();
-}
-
+// ---------------------------------------------------------------------------
+// POST /scan — decode a VIN against the ledger + DNA cache.
+// ---------------------------------------------------------------------------
 export const processVin = async (req: Request, res: Response) => {
-  let vin = sanitizeVin(req.body.vin);
-  if (!vin || vin.length !== 17 || /[IQO]/.test(vin)) {
-    return res.status(400).json({ error: "Invalid VIN format" });
-  }
+  const { vin } = scanSchema.parse(req.body);
 
-  // 1. IDENTITY CHECK
+  // 1. IDENTITY CHECK — exact VIN already in the ledger?
   const exactMatch = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, vin)).limit(1);
-  if (exactMatch.length > 0) {
-    return res.json({ hit: true, patientExists: true, data: exactMatch[0] });
+  const ledgerRow = exactMatch[0];
+  if (ledgerRow) {
+    return res.json({ hit: true, patientExists: true, data: ledgerRow });
   }
 
-  // 2. DNA EXTRACTION
-  const wmi = vin.substring(0, 3);
-  const vds_code = vin.substring(3, 8);
+  // 2. DNA EXTRACTION — derive the cache key on the SERVER, never from the client.
+  const wmi = vin.substring(0, 3); // positions 1–3
+  const vds_code = vin.substring(3, 8); // positions 4–8, 5 chars
   const year = decodeVinYear(vin);
 
-  // 3. PREDICT MAKE
+  // 3. PREDICT MAKE from the WMI mapping (Unknown if we've never seen it).
   let predictedManufacturer = "Unknown";
   const wmiRecord = await db.select().from(wmi_mapping).where(eq(wmi_mapping.wmi, wmi)).limit(1);
-  if (wmiRecord.length > 0) {
+  if (wmiRecord[0]) {
     predictedManufacturer = wmiRecord[0].manufacturer;
-  } else {
-    // ... (Keep NHTSA fallback logic same) ...
   }
 
-  // 4. DNA CACHE CHECK
+  const extractedData = { wmi, vds_code, year, manufacturer: predictedManufacturer };
+
+  // 4. DNA CACHE CHECK — same (wmi, vds_code) = same model, different VIS still hits.
   const cachedData = await db
     .select()
     .from(vds_cache)
@@ -182,211 +49,216 @@ export const processVin = async (req: Request, res: Response) => {
     .leftJoin(vehicle_specs, eq(vds_cache.spec_id, vehicle_specs.id))
     .limit(1);
 
-  if (cachedData.length > 0) {
+  const cacheRow = cachedData[0];
+  if (cacheRow) {
     return res.json({
       hit: true,
       patientExists: false,
-      extractedData: { wmi, vds_code, year, manufacturer: predictedManufacturer },
-      data: cachedData[0], // Contains { vds_cache, vehicle_specs }
+      extractedData,
+      data: {
+        ...cacheRow.vds_cache,
+        hardware_specs: cacheRow.vehicle_specs?.hardware_specs ?? null,
+        status: cacheRow.vds_cache.status,
+      },
     });
   }
 
-  // 5. NEW SCAN PROMPT
-  // ... (Keep suggestedModels logic same) ...
+  // 5. MISS — prompt the admin verification flow, with model suggestions if we
+  //    know the make. nhtsa_models is stored title-cased; match case-insensitively.
+  let suggestedModels: Array<{ id: number; make: string; model: string }> = [];
+  if (predictedManufacturer !== "Unknown") {
+    suggestedModels = await db
+      .select({ id: nhtsa_models.id, make: nhtsa_models.make, model: nhtsa_models.model })
+      .from(nhtsa_models)
+      .where(ilike(nhtsa_models.make, predictedManufacturer))
+      .limit(50);
+  }
 
   return res.json({
     hit: false,
     patientExists: false,
     promptAdmin: true,
-    extractedData: { wmi, vds_code, year, manufacturer: predictedManufacturer },
-    suggestedModels: [], // Populate with your existing logic
+    extractedData,
+    suggestedModels,
   });
 };
 
-// export const saveVehicleToLedger = async (req: Request, res: Response) => {
-//   const { vin, manufacturer, year, model, baseFacts, hardwareSpecs, image_url } = req.body;
-//   const userId = req.headers["x-user-id"] as string;
-
-//   try {
-//     await db.transaction(async (tx) => {
-//       // 1. SAVE DNA
-//       const [savedSpec] = await tx.insert(vehicle_specs).values({ hardware_specs: hardwareSpecs }).returning({ id: vehicle_specs.id });
-
-//       // 2. CACHE VDS
-//       if (baseFacts?.wmi && baseFacts?.vds) {
-//         await tx
-//           .insert(vds_cache)
-//           .values({
-//             wmi: baseFacts.wmi,
-//             vds_code: baseFacts.vds,
-//             spec_id: savedSpec.id,
-//             status: "verified",
-//           })
-//           .onConflictDoNothing();
-//       }
-
-//       // 3. SAVE IDENTITY
-//       await tx
-//         .insert(vehicle_ledger)
-//         .values({
-//           vin,
-//           manufacturer,
-//           year,
-//           model,
-//           image_url,
-//           wmi: baseFacts?.wmi,
-//           vds: baseFacts?.vds,
-//           hardware_specs: hardwareSpecs,
-//           scannedBy: userId,
-//         })
-//         .onConflictDoUpdate({
-//           target: vehicle_ledger.vin,
-//           set: { manufacturer, year, model, image_url, hardware_specs: hardwareSpecs, scannedBy: userId },
-//         });
-//     });
-
-//     return res.json({ success: true });
-//   } catch (error) {
-//     console.error("Save failed:", error);
-//     return res.status(500).json({ error: "Internal server error" });
-//   }
-// };
-
+// ---------------------------------------------------------------------------
+// POST /log — save a verified vehicle to the ledger AND seed the shared cache.
+// ---------------------------------------------------------------------------
 export const saveVehicleToLedger = async (req: Request, res: Response) => {
-  const { vin, manufacturer, year, model, baseFacts, hardwareSpecs, image_url } = req.body;
-  const userId = req.headers["x-user-id"] as string;
+  const userId = req.user?.id;
+  if (!userId) throw new AppError(401, "Unauthorized");
 
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
-  if (!vin) return res.status(400).json({ error: "VIN is required" });
+  const body = saveLedgerSchema.parse(req.body);
+  const { vin, manufacturer, year, model, hardwareSpecs, image_url, baseFacts } = body;
 
-  const cleanVin = vin
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
-  if (cleanVin.length !== 17) {
-    return res.status(400).json({ error: "Invalid VIN length" });
-  }
+  // Derive the cache key the SAME way processVin does — never trust client values.
+  const wmi = vin.substring(0, 3);
+  const vds_code = vin.substring(3, 8); // positions 4–8, 5 chars
 
-  try {
-    await db.transaction(async (tx) => {
-      // 1. SAVE SHARED DNA (Brain 2)
-      const [savedSpec] = await tx
-        .insert(vehicle_specs)
-        .values({
-          hardware_specs: hardwareSpecs,
-        })
-        .returning({ id: vehicle_specs.id });
+  await db.transaction(async (tx) => {
+    // 1. Save the shared spec blob (Brain 2).
+    const [savedSpec] = await tx.insert(vehicle_specs).values({ hardware_specs: hardwareSpecs }).returning({ id: vehicle_specs.id });
+    if (!savedSpec) throw new AppError(500, "Failed to persist specifications");
 
-      // 2. LINK WMI + VDS TO DNA
-      if (baseFacts?.wmi && baseFacts?.vds) {
-        await tx
-          .insert(vds_cache)
-          .values({
-            wmi: baseFacts.wmi,
-            vds_code: baseFacts.vds,
-            spec_id: savedSpec.id,
-            status: "verified",
-          })
-          .onConflictDoNothing();
-      }
+    // 2. Ensure the parent WMI row exists (FK target for vds_cache). Seed it if
+    //    missing, upgrade it if currently "Unknown", but never clobber a known make.
+    await tx
+      .insert(wmi_mapping)
+      .values({ wmi, manufacturer })
+      .onConflictDoUpdate({
+        target: wmi_mapping.wmi,
+        set: { manufacturer, updated_at: new Date() },
+        setWhere: eq(wmi_mapping.manufacturer, "Unknown"),
+      });
 
-      // 3. SAVE EXACT IDENTITY (Brain 1)
-      await tx
-        .insert(vehicle_ledger)
-        .values({
-          vin: cleanVin,
-          manufacturer: manufacturer || "Unknown",
-          year: year || "Unknown",
-          model: model || "Unknown",
-          image_url: image_url || null,
-          wmi: baseFacts?.wmi,
-          vds: baseFacts?.vds,
-          vis: baseFacts?.vis,
-          plant: baseFacts?.plant,
-          country: baseFacts?.country,
-          hardware_specs: hardwareSpecs,
-          scannedBy: userId,
-        })
-        .onConflictDoUpdate({
-          target: vehicle_ledger.vin,
-          set: {
-            manufacturer: manufacturer || "Unknown",
-            year: year || "Unknown",
-            model: model || "Unknown",
-            image_url: image_url || null,
-            wmi: baseFacts?.wmi,
-            vds: baseFacts?.vds,
-            vis: baseFacts?.vis,
-            plant: baseFacts?.plant,
-            country: baseFacts?.country,
-            hardware_specs: hardwareSpecs,
-            scannedBy: userId,
-          },
-        });
-    });
+    // 3. Write the cache — this is what makes a different-VIS car decode next time.
+    await tx.insert(vds_cache).values({ wmi, vds_code, spec_id: savedSpec.id, status: "verified" }).onConflictDoNothing();
 
-    const newRecord = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, cleanVin));
-    return res.json({ success: true, record: newRecord[0] });
-  } catch (error) {
-    console.error("Save to ledger failed:", error);
-    return res.status(500).json({ error: "Failed to save vehicle data" });
-  }
+    // 4. Save the exact identity (Brain 1).
+    const values = {
+      vin,
+      manufacturer,
+      year,
+      model,
+      image_url,
+      wmi,
+      vds: vds_code,
+      vis: baseFacts?.vis ?? null,
+      plant: baseFacts?.plant ?? null,
+      country: baseFacts?.country ?? null,
+      hardware_specs: hardwareSpecs,
+      scannedBy: userId,
+    };
+    await tx
+      .insert(vehicle_ledger)
+      .values(values)
+      .onConflictDoUpdate({ target: vehicle_ledger.vin, set: { ...values, updatedAt: new Date() } });
+  });
+
+  const [record] = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, vin)).limit(1);
+  return res.json({ success: true, record });
 };
 
-export const generateDraft = async (req: Request, res: Response) => {
-  const { manufacturer, year, model } = req.body;
+// ---------------------------------------------------------------------------
+// POST /verify — an admin submits verified specs for a (wmi, vds_code) key.
+// ---------------------------------------------------------------------------
+export const submitVerifiedSpec = async (req: Request, res: Response) => {
+  const admin_id = req.user?.id;
+  if (!admin_id) throw new AppError(401, "Unauthorized");
 
-  if (!manufacturer || !year || !model) {
-    return res.status(400).json({ error: "Missing required fields: manufacturer, year, or model." });
-  }
+  const { wmi, vds_code, hardware_specs } = submitVerifiedSpecSchema.parse(req.body);
+
+  await db.transaction(async (tx) => {
+    // 1. Insert the verified specification blob.
+    const [newSpec] = await tx.insert(vehicle_specs).values({ hardware_specs }).returning({ id: vehicle_specs.id });
+    if (!newSpec) throw new AppError(500, "Failed to persist specifications");
+    const specId = newSpec.id;
+
+    // 2. Ensure the parent WMI row exists before the cache FK references it.
+    await tx.insert(wmi_mapping).values({ wmi, manufacturer: "Unknown" }).onConflictDoNothing();
+
+    // 3. Log who submitted it.
+    await tx.insert(verification_log).values({ wmi, vds_code, admin_id, proposed_spec_id: specId });
+
+    // 4. Upsert the cache entry.
+    await tx
+      .insert(vds_cache)
+      .values({ wmi, vds_code, spec_id: specId, status: "verified" })
+      .onConflictDoUpdate({
+        target: [vds_cache.wmi, vds_cache.vds_code],
+        set: { spec_id: specId, status: "verified", updated_at: new Date() },
+      });
+  });
+
+  return res.json({ success: true, message: "Specification saved successfully." });
+};
+
+// ---------------------------------------------------------------------------
+// GET /conflicts — cache rows flagged as conflicting, with their proposals.
+// ---------------------------------------------------------------------------
+export const getConflicts = async (_req: Request, res: Response) => {
+  const conflicts = await db
+    .select()
+    .from(vds_cache)
+    .where(eq(vds_cache.status, "conflict"))
+    .leftJoin(verification_log, and(eq(vds_cache.wmi, verification_log.wmi), eq(vds_cache.vds_code, verification_log.vds_code)))
+    .leftJoin(vehicle_specs, eq(verification_log.proposed_spec_id, vehicle_specs.id));
+
+  return res.json(conflicts);
+};
+
+// ---------------------------------------------------------------------------
+// POST /resolve — pick the winning spec for a conflicting cache key.
+// ---------------------------------------------------------------------------
+export const resolveConflict = async (req: Request, res: Response) => {
+  const { wmi, vds_code, selected_spec_id } = resolveConflictSchema.parse(req.body);
+
+  // Only allow selecting a spec that was actually proposed for THIS key.
+  const proposal = await db
+    .select({ id: verification_log.id })
+    .from(verification_log)
+    .where(and(eq(verification_log.wmi, wmi), eq(verification_log.vds_code, vds_code), eq(verification_log.proposed_spec_id, selected_spec_id)))
+    .limit(1);
+  if (!proposal[0]) throw new AppError(400, "selected_spec_id was not proposed for this WMI/VDS");
+
+  const updated = await db
+    .update(vds_cache)
+    .set({ spec_id: selected_spec_id, status: "verified", updated_at: new Date() })
+    .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)))
+    .returning({ wmi: vds_cache.wmi });
+  if (!updated[0]) throw new AppError(404, "No cache entry for this WMI/VDS");
+
+  return res.json({ success: true });
+};
+
+// ---------------------------------------------------------------------------
+// POST /generate-draft — AI-drafted specs for a make/model/year.
+// ---------------------------------------------------------------------------
+export const generateDraft = async (req: Request, res: Response) => {
+  const { manufacturer, year, model } = generateDraftSchema.parse(req.body);
 
   try {
     const draft = await generateVehicleSpecsDraft(manufacturer, year, model);
     return res.json({ draft });
   } catch (error) {
     console.error("AI Draft generation failed:", error);
-    return res.status(500).json({ error: "Failed to generate AI specs draft." });
+    throw new AppError(502, "Failed to generate AI specs draft.");
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /images — proxy an image search for a make/model/year.
+// ---------------------------------------------------------------------------
 export const getVehicleImages = async (req: Request, res: Response) => {
-  const { manufacturer, year, model, startIndex = 1 } = req.body;
+  const { manufacturer, year, model, startIndex } = getImagesSchema.parse(req.body);
 
-  if (!manufacturer || !model) {
-    return res.status(400).json({ error: "Manufacturer and model are required." });
-  }
-
-  const query = `${year !== "Unknown" ? year : ""} ${manufacturer} ${model} exterior`.trim();
   const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) throw new AppError(500, "Image search is not configured");
 
+  const query = `${year && year !== "Unknown" ? year : ""} ${manufacturer} ${model} exterior`.trim();
+
+  let data: { images?: Array<{ imageUrl?: string }> };
   try {
     const response = await fetch("https://google.serper.dev/images", {
       method: "POST",
-      headers: {
-        "X-API-KEY": apiKey as string,
-        "Content-Type": "application/json",
-      },
+      headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({ q: query }),
     });
-
-    const data = await response.json();
-
+    data = (await response.json()) as typeof data;
     if (!response.ok) {
-      console.error("Serper API Error:", data);
-      throw new Error("Failed to fetch images.");
+      console.error("Serper API error:", data);
+      throw new Error("Serper request failed");
     }
-
-    // Serper returns a large array of images.
-    // We map the URLs and slice exactly the 4 the frontend is asking for.
-    const allImages = data.images?.map((item: any) => item.imageUrl) || [];
-
-    // startIndex comes in as 1, 5, 9... we convert to 0-based index
-    const startIdx = startIndex - 1;
-    const images = allImages.slice(startIdx, startIdx + 4);
-
-    return res.json({ images });
   } catch (error) {
     console.error("Image search failed:", error);
-    return res.status(500).json({ error: "Internal server error fetching images." });
+    throw new AppError(502, "Failed to fetch images.");
   }
+
+  const allImages = (data.images ?? []).map((item) => item.imageUrl).filter((u): u is string => typeof u === "string");
+  const startIdx = startIndex - 1; // client sends 1-based
+  const images = allImages.slice(startIdx, startIdx + 4);
+
+  return res.json({ images });
 };

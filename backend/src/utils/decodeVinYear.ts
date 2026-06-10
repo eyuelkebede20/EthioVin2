@@ -1,54 +1,38 @@
+// Single source of truth for VIN model-year decoding.
+//
+// Position 10 (index 9) encodes the year on a 30-year cycle. Position 7 (index 6)
+// disambiguates the cycle: a LETTER there means the 2010+ cycle, a DIGIT means the
+// 1980–2009 cycle. Many cars imported to Ethiopia are pre-2010, so this matters —
+// without it old cars decode as recent.
+
+const YEAR_MAP: Record<string, number> = {
+  A: 1980, B: 1981, C: 1982, D: 1983, E: 1984, F: 1985, G: 1986, H: 1987,
+  J: 1988, K: 1989, L: 1990, M: 1991, N: 1992, P: 1993, R: 1994, S: 1995,
+  T: 1996, V: 1997, W: 1998, X: 1999, Y: 2000,
+  "1": 2001, "2": 2002, "3": 2003, "4": 2004, "5": 2005,
+  "6": 2006, "7": 2007, "8": 2008, "9": 2009,
+};
+
 /**
- * Extracts the exact manufacturing year from a 17-digit ISO VIN.
- * @param {string} vin - The 17-character VIN string.
- * @returns {number|null} The calculated year.
+ * Decode the model year from a full 17-character VIN.
+ * @returns the 4-digit year as a string, or "Unknown" if it can't be determined.
  */
-export function decodeVinYear(vin) {
-  if (vin.length !== 17) return null;
+export function decodeVinYear(vin: string): string {
+  if (!vin || vin.length !== 17) return "Unknown";
 
-  const yearChar = vin.charAt(9).toUpperCase();
-  const decadeChar = vin.charAt(6);
+  const yearChar = vin.charAt(9).toUpperCase(); // position 10
+  const pos7 = vin.charAt(6).toUpperCase(); // position 7 picks the 30-yr cycle
 
-  const yearMap = {
-    A: 1980,
-    B: 1981,
-    C: 1982,
-    D: 1983,
-    E: 1984,
-    F: 1985,
-    G: 1986,
-    H: 1987,
-    J: 1988,
-    K: 1989,
-    L: 1990,
-    M: 1991,
-    N: 1992,
-    P: 1993,
-    R: 1994,
-    S: 1995,
-    T: 1996,
-    V: 1997,
-    W: 1998,
-    X: 1999,
-    Y: 2000,
-    "1": 2001,
-    "2": 2002,
-    "3": 2003,
-    "4": 2004,
-    "5": 2005,
-    "6": 2006,
-    "7": 2007,
-    "8": 2008,
-    "9": 2009,
-  };
+  const base = YEAR_MAP[yearChar];
+  if (base === undefined) return "Unknown";
 
-  let baseYear = yearMap[yearChar];
-  if (!baseYear) return null;
+  // Letter in position 7 -> second cycle (2010+); digit -> first cycle (1980-2009).
+  const secondCycle = /[A-Z]/.test(pos7);
+  let year = secondCycle ? base + 30 : base;
 
-  // Cycle Check: If the 7th digit is alphabetic, the vehicle belongs to the 2010-2039 cycle.
-  if (/[A-Z]/i.test(decadeChar)) {
-    baseYear += 30;
-  }
+  // Safety: never report a year in the future.
+  const max = new Date().getFullYear() + 1;
+  if (year > max) year -= 30;
 
-  return baseYear;
+  return year.toString();
 }
