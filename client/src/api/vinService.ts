@@ -44,11 +44,20 @@ export interface ScanLedgerHit {
   data: LedgerRecord;
 }
 
+/** Model/make/image shared by all VINs with the same (wmi, vds_code). */
+export interface CacheReference {
+  manufacturer: string;
+  model: string;
+  year: string;
+  image_url: string | null;
+}
+
 /** A (wmi, vds_code) DNA cache hit — specs flattened to data.hardware_specs. */
 export interface ScanCacheHit {
   hit: true;
   patientExists: false;
   extractedData: ExtractedData;
+  reference: CacheReference | null;
   data: {
     wmi: string;
     vds_code: string;

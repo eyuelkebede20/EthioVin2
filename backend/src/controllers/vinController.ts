@@ -1,6 +1,6 @@
 import { db } from "../db/index.ts";
 import { vds_cache, wmi_mapping, nhtsa_models, vehicle_specs, verification_log, vehicle_ledger } from "../db/schema.ts";
-import { and, eq, ilike } from "drizzle-orm";
+import { and, desc, eq, ilike, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { generateVehicleSpecsDraft } from "../services/aiService.ts";
 import { decodeVinYear } from "../utils/decodeVinYear.ts";
@@ -51,10 +51,27 @@ export const processVin = async (req: Request, res: Response) => {
 
   const cacheRow = cachedData[0];
   if (cacheRow) {
+    // Same (wmi, vds_code) = same model. Pull model/make/image from a sibling
+    // ledger row (any recorded VIN of this model) so the client can show the full
+    // car and record this VIN without re-entering shared data. Year stays per-VIN.
+    const sibling = await db
+      .select({
+        manufacturer: vehicle_ledger.manufacturer,
+        model: vehicle_ledger.model,
+        year: vehicle_ledger.year,
+        image_url: vehicle_ledger.image_url,
+      })
+      .from(vehicle_ledger)
+      .where(and(eq(vehicle_ledger.wmi, wmi), eq(vehicle_ledger.vds, vds_code)))
+      // Prefer a sibling that actually has an image, then the most recent one.
+      .orderBy(sql`(${vehicle_ledger.image_url} is not null and ${vehicle_ledger.image_url} <> '') desc`, desc(vehicle_ledger.updatedAt))
+      .limit(1);
+
     return res.json({
       hit: true,
       patientExists: false,
       extractedData,
+      reference: sibling[0] ?? null,
       data: {
         ...cacheRow.vds_cache,
         hardware_specs: cacheRow.vehicle_specs?.hardware_specs ?? null,
