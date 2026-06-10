@@ -3,7 +3,7 @@ import { vds_cache, wmi_mapping, nhtsa_models, vehicle_specs, verification_log, 
 import { and, desc, eq, ilike, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { generateVehicleSpecsDraft } from "../services/aiService.ts";
-import { decodeVinYear } from "../utils/decodeVinYear.ts";
+import { parseVin } from "../utils/vin.ts";
 import { AppError } from "../middleware/errorHandler.ts";
 import {
   scanSchema,
@@ -18,19 +18,18 @@ import {
 // POST /scan — decode a VIN against the ledger + DNA cache.
 // ---------------------------------------------------------------------------
 export const processVin = async (req: Request, res: Response) => {
-  const { vin } = scanSchema.parse(req.body);
+  const { vin: rawVin } = scanSchema.parse(req.body);
+
+  // Parse on the SERVER: cache key from the I/O/Q-stripped form, year from the raw
+  // VIN (so an 18-char "LCO…" decodes position 10 correctly).
+  const { keyVin, wmi, vds_code, year } = parseVin(rawVin);
 
   // 1. IDENTITY CHECK — exact VIN already in the ledger?
-  const exactMatch = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, vin)).limit(1);
+  const exactMatch = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, keyVin)).limit(1);
   const ledgerRow = exactMatch[0];
   if (ledgerRow) {
     return res.json({ hit: true, patientExists: true, data: ledgerRow });
   }
-
-  // 2. DNA EXTRACTION — derive the cache key on the SERVER, never from the client.
-  const wmi = vin.substring(0, 3); // positions 1–3
-  const vds_code = vin.substring(3, 8); // positions 4–8, 5 chars
-  const year = decodeVinYear(vin);
 
   // 3. PREDICT MAKE from the WMI mapping (Unknown if we've never seen it).
   let predictedManufacturer = "Unknown";
@@ -108,11 +107,10 @@ export const saveVehicleToLedger = async (req: Request, res: Response) => {
   if (!userId) throw new AppError(401, "Unauthorized");
 
   const body = saveLedgerSchema.parse(req.body);
-  const { vin, manufacturer, year, model, hardwareSpecs, image_url, baseFacts } = body;
+  const { manufacturer, year, model, hardwareSpecs, image_url, baseFacts } = body;
 
   // Derive the cache key the SAME way processVin does — never trust client values.
-  const wmi = vin.substring(0, 3);
-  const vds_code = vin.substring(3, 8); // positions 4–8, 5 chars
+  const { keyVin, wmi, vds_code, vis, plant } = parseVin(body.vin);
 
   await db.transaction(async (tx) => {
     // 1. Save the shared spec blob (Brain 2).
@@ -135,15 +133,15 @@ export const saveVehicleToLedger = async (req: Request, res: Response) => {
 
     // 4. Save the exact identity (Brain 1).
     const values = {
-      vin,
+      vin: keyVin,
       manufacturer,
       year,
       model,
       image_url,
       wmi,
       vds: vds_code,
-      vis: baseFacts?.vis ?? null,
-      plant: baseFacts?.plant ?? null,
+      vis: baseFacts?.vis ?? vis,
+      plant: baseFacts?.plant ?? plant,
       country: baseFacts?.country ?? null,
       hardware_specs: hardwareSpecs,
       scannedBy: userId,
@@ -154,7 +152,7 @@ export const saveVehicleToLedger = async (req: Request, res: Response) => {
       .onConflictDoUpdate({ target: vehicle_ledger.vin, set: { ...values, updatedAt: new Date() } });
   });
 
-  const [record] = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, vin)).limit(1);
+  const [record] = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, keyVin)).limit(1);
   return res.json({ success: true, record });
 };
 

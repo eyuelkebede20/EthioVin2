@@ -18,7 +18,8 @@ const YEAR_MAP: Record<string, number> = {
  * @returns the 4-digit year as a string, or "Unknown" if it can't be determined.
  */
 export function decodeVinYear(vin: string): string {
-  if (!vin || vin.length !== 17) return "Unknown";
+  // Accept 17- and 18-char VINs; we only need positions 7 and 10 to be present.
+  if (!vin || vin.length < 10) return "Unknown";
 
   const yearChar = vin.charAt(9).toUpperCase(); // position 10
   const pos7 = vin.charAt(6).toUpperCase(); // position 7 picks the 30-yr cycle

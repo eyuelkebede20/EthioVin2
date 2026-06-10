@@ -56,7 +56,9 @@ export const hardwareSpecsSchema = z
 // Request body schemas
 // ---------------------------------------------------------------------------
 
-export const scanSchema = z.object({ vin: vinField });
+// VIN parsing/validation is handled by parseVin() (it must keep I/O/Q to decode
+// the year correctly), so the schema only checks that a string was sent.
+export const scanSchema = z.object({ vin: z.string().min(1).max(40) });
 
 export const generateDraftSchema = z.object({
   manufacturer: shortText,
@@ -84,7 +86,7 @@ export const resolveConflictSchema = z.object({
 });
 
 export const saveLedgerSchema = z.object({
-  vin: vinField,
+  vin: z.string().min(1).max(40), // parsed/validated by parseVin()
   manufacturer: shortText,
   year: yearField,
   model: shortText,

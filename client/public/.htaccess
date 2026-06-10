@@ -1,0 +1,12 @@
+# SPA fallback for client-side routing.
+# Without this, refreshing a route like /scan makes Apache look for a real file
+# at that path and returns 404. Rewrite everything that isn't an existing file or
+# directory to index.html so React Router can handle the route.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>

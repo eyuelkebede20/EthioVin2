@@ -29,8 +29,9 @@ const SearchBox = ({ region, vin, setVin, error, setError, onDecode, loading }: 
     let value = e.target.value.toUpperCase();
 
     if (region === "asean") {
-      value = value.replace(/[IOQ]/g, "").slice(0, 17);
-      if (value.length > 0 && !/^[A-Z0-9]*$/.test(value)) return;
+      // Keep I/O/Q (these VINs legitimately contain O); stripping it would shift
+      // the year position. Just uppercase, drop separators, cap at 17.
+      value = value.replace(/[^A-Z0-9]/g, "").slice(0, 17);
     } else {
       value = value.slice(0, 15);
       if (value.length > 0 && !/^[A-Z0-9-]*$/.test(value)) return;
@@ -86,7 +87,7 @@ export default function Scanner({ onScanComplete }: { onScanComplete: (res: Scan
       .replace(/[^A-Z0-9]/g, "");
 
     if (cleanVin.length !== 17) {
-      setError("ISO VIN must be exactly 17 characters.");
+      setError("VIN must be exactly 17 characters.");
       return;
     }
 
