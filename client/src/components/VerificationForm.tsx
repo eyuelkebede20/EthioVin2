@@ -47,12 +47,13 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
 
   const finalManufacturer = isUnknownWmi ? resolvedMfg : baseManufacturer;
 
-  // Manual year entry when the VIN didn't decode one.
-  const [manualYear, setManualYear] = useState<string>("");
-  const finalYear = rawYear === "Unknown" ? manualYear : rawYear;
-
+  // Year is always editable (VIN decoding is a heuristic and can be wrong). It
+  // defaults to the decoded year when that looks valid, otherwise blank.
   const currentYear = new Date().getFullYear();
-  const yearOptions = Array.from({ length: currentYear - 1991 + 1 }, (_, i) => currentYear - i);
+  const yearOptions = Array.from({ length: currentYear - 1980 + 1 }, (_, i) => currentYear - i);
+  const decodedYear = /^\d{4}$/.test(rawYear) ? rawYear : "";
+  const [selectedYear, setSelectedYear] = useState<string>(decodedYear);
+  const finalYear = selectedYear;
 
   const handleAddManufacturer = () => {
     const trimmed = newMfgName.trim();
@@ -67,7 +68,7 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
   const validate = (): string | null => {
     if (isUnknownWmi && !resolvedMfg) return "Please select a manufacturer for this unknown WMI.";
     if (!modelInput.trim()) return "Please enter the vehicle model.";
-    if (rawYear === "Unknown" && !manualYear) return "Please select a valid year.";
+    if (!selectedYear) return "Please select a year.";
     return null;
   };
 
@@ -170,20 +171,16 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
 
             <div className="flex justify-between items-center">
               <span className="font-medium">Year</span>
-              {rawYear === "Unknown" ? (
-                <select value={manualYear} onChange={(e) => setManualYear(e.target.value)} className="p-1 border border-slate-300 rounded bg-white">
-                  <option value="" disabled>
-                    Select Year
+              <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="p-1 border border-slate-300 rounded bg-white font-mono">
+                <option value="" disabled>
+                  Select Year
+                </option>
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
                   </option>
-                  {yearOptions.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span className="font-mono">{rawYear}</span>
-              )}
+                ))}
+              </select>
             </div>
 
             <div className="flex justify-between">

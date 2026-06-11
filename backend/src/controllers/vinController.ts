@@ -12,6 +12,7 @@ import {
   resolveConflictSchema,
   generateDraftSchema,
   getImagesSchema,
+  updateLedgerSchema,
 } from "../utils/validation.ts";
 
 // ---------------------------------------------------------------------------
@@ -154,6 +155,67 @@ export const saveVehicleToLedger = async (req: Request, res: Response) => {
 
   const [record] = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, keyVin)).limit(1);
   return res.json({ success: true, record });
+};
+
+// ---------------------------------------------------------------------------
+// PATCH /ledger/:vin — fix an existing record's identity fields (year/model/etc).
+// Updates only the row; leaves the WMI/VDS cache key and shared specs untouched.
+// ---------------------------------------------------------------------------
+export const updateLedger = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) throw new AppError(401, "Unauthorized");
+
+  const vinParam = String(req.params.vin ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  if (vinParam.length !== 17) throw new AppError(400, "Invalid VIN");
+
+  const updates = updateLedgerSchema.parse(req.body);
+
+  const set: Partial<typeof vehicle_ledger.$inferInsert> = { updatedAt: new Date() };
+  if (updates.manufacturer !== undefined) set.manufacturer = updates.manufacturer;
+  if (updates.year !== undefined) set.year = updates.year;
+  if (updates.model !== undefined) set.model = updates.model;
+  if (updates.image_url !== undefined) {
+    const url = typeof updates.image_url === "string" ? updates.image_url.trim() : "";
+    if (url && !/^https?:\/\//.test(url)) throw new AppError(400, "image_url must be a valid http(s) URL");
+    set.image_url = url || null;
+  }
+  if (Object.keys(set).length === 1) throw new AppError(400, "No fields to update");
+
+  const updated = await db.update(vehicle_ledger).set(set).where(eq(vehicle_ledger.vin, vinParam)).returning();
+  if (!updated[0]) throw new AppError(404, "Vehicle not found");
+
+  return res.json({ success: true, record: updated[0] });
+};
+
+// ---------------------------------------------------------------------------
+// PATCH /specs — edit the SHARED specs for a (wmi, vds_code). Updates the cached
+// spec in place and every ledger row of that model, since specs are shared.
+// ---------------------------------------------------------------------------
+export const updateSpecs = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) throw new AppError(401, "Unauthorized");
+
+  const { wmi, vds_code, hardware_specs } = submitVerifiedSpecSchema.parse(req.body);
+
+  await db.transaction(async (tx) => {
+    const cache = await tx
+      .select({ spec_id: vds_cache.spec_id })
+      .from(vds_cache)
+      .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)))
+      .limit(1);
+    if (!cache[0]) throw new AppError(404, "No cached specs for this WMI/VDS");
+
+    await tx.update(vehicle_specs).set({ hardware_specs }).where(eq(vehicle_specs.id, cache[0].spec_id));
+    await tx
+      .update(vehicle_ledger)
+      .set({ hardware_specs, updatedAt: new Date() })
+      .where(and(eq(vehicle_ledger.wmi, wmi), eq(vehicle_ledger.vds, vds_code)));
+  });
+
+  return res.json({ success: true, hardware_specs });
 };
 
 // ---------------------------------------------------------------------------

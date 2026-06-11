@@ -108,6 +108,12 @@ export const saveToLedger = (input: SaveLedgerInput) =>
 export const submitVerifiedSpec = (input: { wmi: string; vds_code: string; hardware_specs: HardwareSpecs }) =>
   api<{ success: boolean }>("/api/v1/vin/verify", { method: "POST", body: input });
 
+export const updateLedger = (vin: string, updates: { manufacturer?: string; year?: string; model?: string; image_url?: string | null }) =>
+  api<{ success: boolean; record: LedgerRecord }>(`/api/v1/vin/ledger/${encodeURIComponent(vin)}`, { method: "PATCH", body: updates });
+
+export const updateSpecs = (input: { wmi: string; vds_code: string; hardware_specs: HardwareSpecs }) =>
+  api<{ success: boolean; hardware_specs: HardwareSpecs }>("/api/v1/vin/specs", { method: "PATCH", body: input });
+
 export const getConflicts = () => api<ConflictJoinRow[]>("/api/v1/vin/conflicts");
 
 export const resolveConflict = (input: { wmi: string; vds_code: string; selected_spec_id: number }) =>

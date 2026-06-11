@@ -102,6 +102,15 @@ export const saveLedgerSchema = z.object({
     .optional(),
 });
 
+// Edit an existing ledger row's identity fields. All optional (partial update);
+// image_url accepts a string or null (null/empty clears the image).
+export const updateLedgerSchema = z.object({
+  manufacturer: shortText.optional(),
+  year: yearField.optional(),
+  model: shortText.optional(),
+  image_url: z.union([z.string().max(2048), z.null()]).optional(),
+});
+
 export const updateWmiSchema = z.object({
   wmi: wmiField,
   manufacturer: shortText,
