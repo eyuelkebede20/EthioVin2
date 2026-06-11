@@ -34,10 +34,21 @@ jobs:
           local-dir: ./client/dist/
           server-dir: /public_html/ethiovin/
 
+      # Bundle the backend to plain JS on the (Linux) runner, so production runs
+      # `node dist/index.js` — no tsx/esbuild native binaries needed on the host.
+      - name: Build Backend
+        working-directory: ./backend
+        run: |
+          npm install
+          npm run build
+
       - name: Trigger cPanel Passenger Restart
         run: |
           mkdir -p backend/tmp
-          touch backend/tmp/restart.txt
+          # Write CHANGING content so the FTP delta-sync actually re-uploads the
+          # file (an empty `touch` keeps the same size/content and gets skipped),
+          # which refreshes its mtime and makes Passenger/LiteSpeed restart.
+          echo "restart ${GITHUB_SHA} $(date +%s)" > backend/tmp/restart.txt
 
       - name: Deploy Backend via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
