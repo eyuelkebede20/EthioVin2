@@ -10,10 +10,13 @@ import { attachUser, requireRole } from "./middleware/authMiddleware.ts";
 import { errorHandler, notFound } from "./middleware/errorHandler.ts";
 import "dotenv/config";
 
-// Fail fast on misconfiguration rather than silently allowing a broken/insecure
-// CORS origin like "undefined".
-const FRONTEND_URL = process.env.FRONTEND_URL;
-if (!FRONTEND_URL) {
+// Allowed CORS origins come from FRONTEND_URL (comma-separated for multiple).
+// Trailing slashes are stripped so "https://site.com/" matches origin "https://site.com".
+const allowedOrigins = (process.env.FRONTEND_URL ?? "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+if (allowedOrigins.length === 0) {
   throw new Error("FRONTEND_URL environment variable is required");
 }
 
@@ -26,7 +29,11 @@ app.set("trust proxy", 1);
 
 app.use(
   cors({
-    origin: [FRONTEND_URL],
+    origin: (origin, cb) => {
+      // Allow non-browser/no-Origin requests, and any configured frontend origin.
+      if (!origin || allowedOrigins.includes(origin.replace(/\/+$/, ""))) return cb(null, true);
+      return cb(null, false);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     // Identity must come from the better-auth session cookie, never a client
@@ -74,5 +81,5 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} (frontend: ${FRONTEND_URL})`);
+  console.log(`Server running on port ${PORT} (allowed origins: ${allowedOrigins.join(", ")})`);
 });

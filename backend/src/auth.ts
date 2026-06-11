@@ -16,7 +16,10 @@ export const auth = betterAuth({
     },
   }),
   baseURL: process.env.BETTER_AUTH_URL,
-  trustedOrigins: process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [],
+  trustedOrigins: (process.env.FRONTEND_URL ?? "")
+    .split(",")
+    .map((o) => o.trim().replace(/\/+$/, ""))
+    .filter(Boolean),
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
