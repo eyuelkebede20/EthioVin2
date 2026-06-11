@@ -19,6 +19,11 @@ if (!FRONTEND_URL) {
 
 const app = express();
 
+// Behind cPanel/LiteSpeed (and most hosts) requests arrive via a reverse proxy
+// that sets X-Forwarded-For. Trust one proxy hop so req.ip is the real client IP
+// — without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+app.set("trust proxy", 1);
+
 app.use(
   cors({
     origin: [FRONTEND_URL],
