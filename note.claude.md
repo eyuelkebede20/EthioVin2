@@ -37,9 +37,8 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] T7 — credit ledger helper (services/creditService.ts, append-only + advisory lock + balance)
 - [x] T5 — decode free/premium serializer split (services/decodeView.ts)
 - [x] decode endpoints: /api/v1/decode/:vin (public free) + /:vin/full (premium) + audit
-- [ ] event ingestion spine: services/eventService.ts (write vehicle_event + idempotency +
-      trust-weighted credit + optional field corroboration). Shared by garage/insurance/diag.  ← NEXT
-- [ ] T9 — garage: jobs/appointments/parts/customers; job close → vehicle_event  (PAUSE: depth decision)
+- [x] event ingestion spine: services/eventService.ts (ingestVehicleEvent + recordVehicleEvent)
+- [ ] T9 — garage: jobs/appointments/parts/customers; job close → vehicle_event  ← PAUSED: depth decision
 - [ ] T10 — insurance reciprocal exchange (both minimization gates)
 - [ ] T8 — payments provider integration (ETB)
 - [ ] T11 — admin analytics + org onboarding
@@ -67,7 +66,10 @@ iteration as a checkpoint on the branch so progress survives.
   history count; premium = full specs + history. Typecheck clean; committed ebd5e1f.
 - 2026-06-23 iter5: decode endpoints (decodeController + decodeRoutes), public /decode/:vin mounted
   outside auth in index.ts, premium /:vin/full audited. resolveVehicle reuses processVin lookup
-  order. Typecheck clean; committed a7d4b57. NEXT: eventService spine write path.
+  order. Typecheck clean; committed a7d4b57.
+- 2026-06-23 iter6: eventService spine (ingestVehicleEvent + recordVehicleEvent) — idempotent event
+  insert + trust-weighted credit + per-field corroboration in one tx; reads score via tx (pool-safe).
+  Typecheck clean; committed 5311e9c. LOOP PAUSED at T9 — asking user garage-management depth.
 
 ## Gotchas / learnings
 - crypto.randomUUID() is available globally (Node 22) — used by vehicle_ledger already.
@@ -76,14 +78,8 @@ iteration as a checkpoint on the branch so progress survives.
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-services/eventService.ts — the shared spine write path used by garage/insurance/diagnostician:
-  ingestVehicleEvent(tx, { vin, eventType, occurredAt, recordedBy, orgId, sourceType, payload,
-  fields? }) →
-    - parseVin to canonical keyVin (server-derived)
-    - insert vehicle_event with an idempotencyKey = hash(orgId|vin|eventType|occurredAt); on
-      conflict do nothing (dup submit = no double credit)
-    - award trust-weighted credit via creditService.recordCredit (reason "data_input")
-    - for each declared field {field,value} run trustService.recordFieldClaim (corroboration)
-    - everything inside ONE db.transaction (caller passes tx OR wrap here)
-  Keep pure-ish (no req). Then T9 garage will call this on job close. After eventService, the
-  NEXT task is T9 → PAUSE for garage-depth decision before building it. Loop RE-ARMED.
+PAUSED on the garage-management depth decision (asked the user). Once answered, build T9 garage
+controller + routes scoped by requireOrg("garage"): customers, jobs (+ items), and on job close
+call eventService.ingestVehicleEvent (maintenance/repair event + odometer reading + corroborate
+the make/model fields). Depth (minimum vs full = + appointments/parts/invoicing) per the answer.
+Then T10 insurance reciprocal exchange. Re-arm the loop with ScheduleWakeup AFTER the user answers.
