@@ -4,12 +4,11 @@ import { z } from "zod";
 // Reusable field schemas
 // ---------------------------------------------------------------------------
 
-/** A full ISO VIN: sanitized to uppercase alphanumerics, exactly 17 chars, no I/O/Q. */
-export const vinField = z
-  .string()
-  .transform((s) => s.trim().toUpperCase().replace(/[^A-Z0-9]/g, ""))
-  .refine((s) => s.length === 17, "VIN must be exactly 17 characters")
-  .refine((s) => !/[IOQ]/.test(s), "VIN must not contain the letters I, O, or Q");
+// NOTE: there is deliberately no shared "VIN field" validator here. VINs are
+// validated + parsed by parseVin() (utils/vin.ts), which must KEEP I/O/Q to
+// decode the model year correctly; a generic refine that strips/rejects those
+// letters would shift positions and mis-read the year. Request schemas that take
+// a VIN use a plain bounded string and defer to parseVin().
 
 /** WMI: positions 1–3, exactly 3 alphanumerics. */
 export const wmiField = z
@@ -115,4 +114,117 @@ export const updateWmiSchema = z.object({
   wmi: wmiField,
   manufacturer: shortText,
   country: z.string().trim().max(100).optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Milestone 2 — request schemas (orgs, garage, insurance, payments)
+// ---------------------------------------------------------------------------
+
+// A bounded VIN string; the canonical key is derived by parseVin() in the
+// controller (NOT a refine — that would strip/reject I/O/Q and shift positions).
+const vinInput = z.string().min(1).max(40);
+
+// Email without z.string().email()/datetime() (deprecated in zod 4) — plain refine.
+const emailField = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(200)
+  .refine((s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s), "invalid email");
+
+const orgIdField = z.string().trim().min(1).max(80);
+
+export const ORG_TYPES = ["garage", "insurer", "diagnostic"] as const;
+export const JOB_STATUSES = ["intake", "in_progress", "awaiting_parts", "done", "delivered", "cancelled"] as const;
+
+// --- Org onboarding (super_admin) ---
+export const createOrgSchema = z.object({
+  name: shortText,
+  type: z.enum(ORG_TYPES),
+  country: z.string().trim().max(100).optional(),
+  city: z.string().trim().max(100).optional(),
+});
+
+export const addOrgMemberSchema = z.object({
+  orgId: orgIdField,
+  email: emailField,
+  orgRole: z.string().trim().max(40).optional(),
+});
+
+export const dataSharingAgreementSchema = z.object({
+  orgId: orgIdField,
+  scope: z.record(z.string(), z.unknown()).refine((v) => Object.keys(v).length > 0, "scope must not be empty"),
+});
+
+// --- Contributor inputs ---
+export const odometerReadingSchema = z.object({
+  vin: vinInput,
+  readingKm: z.coerce.number().int().min(0).max(10_000_000),
+  readAt: z.coerce.date().optional(),
+  source: z.string().trim().max(40).optional(),
+});
+
+// MINIMIZATION GATE (intake): only these fields are accepted. Any extra fields an
+// insurer sends (claim narrative, claimant PII, amounts, documents) are dropped by
+// zod's default strip and NEVER persisted. This IS the inbound privacy boundary (§3b).
+export const insuranceClaimIntakeSchema = z.object({
+  vin: vinInput,
+  incidentType: z.string().trim().min(1).max(40),
+  severityBand: z.coerce.number().int().min(1).max(5),
+  incidentDate: z.coerce.date().optional(),
+  payoutBand: z.string().trim().max(20).optional(),
+});
+
+export const policeReportIntakeSchema = z.object({
+  vin: vinInput,
+  reportRef: z.string().trim().max(100).optional(),
+  incidentType: z.string().trim().min(1).max(40),
+  severityBand: z.coerce.number().int().min(1).max(5).optional(),
+  incidentDate: z.coerce.date().optional(),
+});
+
+// --- Garage management ---
+export const customerSchema = z.object({
+  name: shortText,
+  phone: z.string().trim().max(40).optional(),
+});
+
+export const garageJobItemSchema = z.object({
+  kind: z.enum(["labor", "part"]),
+  description: z.string().trim().min(1).max(300),
+  qty: z.coerce.number().min(0).max(100_000).default(1),
+  unitCost: z.coerce.number().min(0).max(100_000_000).default(0),
+});
+
+export const createGarageJobSchema = z.object({
+  vin: vinInput.optional(),
+  customerId: z.string().trim().max(80).optional(),
+  odometerIn: z.coerce.number().int().min(0).max(10_000_000).optional(),
+  items: z.array(garageJobItemSchema).max(200).optional(),
+});
+
+export const updateGarageJobSchema = z.object({
+  status: z.enum(JOB_STATUSES).optional(),
+  odometerIn: z.coerce.number().int().min(0).max(10_000_000).optional(),
+  items: z.array(garageJobItemSchema).max(200).optional(),
+});
+
+export const appointmentSchema = z.object({
+  vin: vinInput.optional(),
+  customerId: z.string().trim().max(80).optional(),
+  scheduledAt: z.coerce.date(),
+});
+
+export const partSchema = z.object({
+  name: shortText,
+  sku: z.string().trim().max(80).optional(),
+  qtyOnHand: z.coerce.number().int().min(0).max(1_000_000).default(0),
+  reorderLevel: z.coerce.number().int().min(0).max(1_000_000).default(0),
+  unitCost: z.coerce.number().min(0).max(100_000_000).default(0),
+});
+
+// --- Payments ---
+export const paymentInitSchema = z.object({
+  amount: z.coerce.number().positive().max(10_000_000),
+  provider: z.string().trim().min(1).max(40),
 });
