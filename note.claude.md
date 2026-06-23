@@ -35,8 +35,8 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] T2b — Zod validation schemas for new bodies (validation.ts)
 - [x] T6 — trust corroboration state machine (services/trustService.ts + field_claims table)
 - [x] T7 — credit ledger helper (services/creditService.ts, append-only + advisory lock + balance)
-- [ ] T5 — decode free/premium serializer split   ← NEXT (after trust-curve answer)
-- [ ] new vin endpoints: /decode (public free + gated premium), /history
+- [x] T5 — decode free/premium serializer split (services/decodeView.ts)
+- [ ] new vin endpoints: /decode (public free + gated premium), /history   ← NEXT
 - [ ] T9 — garage: jobs/appointments/parts/customers; job close → vehicle_event
 - [ ] T10 — insurance reciprocal exchange (both minimization gates)
 - [ ] T8 — payments provider integration (ETB)
@@ -60,8 +60,10 @@ iteration as a checkpoint on the branch so progress survives.
   `?: T | undefined` in interfaces. Typecheck clean; committed 9fcbfc4.
 - 2026-06-23 iter3: T6 trustService + field_claims table; T7 creditService. Both use
   pg_advisory_xact_lock for per-key serialization. Typecheck clean; committed dd8cf24.
-  LOOP PAUSED — asking user to confirm the trust penalty curve (TRUST_CONFIG in trustService.ts)
-  before relying on it. Built with proposed defaults (corroborateAt 2, resolveAt 3, penalty 10).
+  Trust curve confirmed "Forgiving start" (= default); committed 042d1c2.
+- 2026-06-23 iter4: T5 buildDecodeView (services/decodeView.ts) — free tier = basic spec teaser +
+  history count; premium = full specs + history. Typecheck clean; committed ebd5e1f.
+  NEXT: /decode + /history endpoints (controller + routes).
 
 ## Gotchas / learnings
 - crypto.randomUUID() is available globally (Node 22) — used by vehicle_ledger already.
@@ -70,7 +72,12 @@ iteration as a checkpoint on the branch so progress survives.
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-T5 — split decode response into free (make/model/year + basic specs) vs premium (full specs +
-history) serializers: one function with a tier param (req.tier from requireTier). Put in
-services/decodeView.ts or utils. Then wire the /decode (public free + gated premium) + /history
-endpoints in a later iteration. Loop is RE-ARMED.
+Endpoints: add a decodeController with
+  - GET /api/v1/decode/:vin  → PUBLIC, free tier (no auth). parseVin on server, look up
+    ledger/vds_cache like processVin does, build FREE view via buildDecodeView. This is the
+    public funnel — must be mounted OUTSIDE requireAuth (new public sub-app/route, still rate-limited).
+  - GET /api/v1/decode/:vin/full → requireAuth + requireTier("premium"): premium view with full
+    specs + history (read vehicle_events by vin, newest first) + writeAudit.
+Mind index.ts mounting: /api/v1/vin is behind apiLimiter (ok) but /scan uses requireAuth per-route,
+not router-wide — so I can add a PUBLIC decode route. Double-check no global requireAuth blocks it.
+Reuse parseVin, vds_cache/vehicle_ledger lookups. Loop RE-ARMED.
