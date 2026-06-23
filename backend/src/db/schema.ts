@@ -484,3 +484,20 @@ export const audit_log = pgTable(
     resourceIdx: index("audit_resource_idx").on(t.resourceType, t.resourceId),
   }),
 );
+
+// One row per asserted (vin, field, value) by a contributor. The corroboration
+// engine tallies these to resolve a conflict by majority and identify the
+// minority to penalize. (Trust scores change only when a flag RESOLVES.)
+export const field_claims = pgTable(
+  "field_claims",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    vin: varchar("vin", { length: 17 }).notNull(),
+    field: varchar("field", { length: 60 }).notNull(),
+    value: text("value").notNull(),
+    userId: text("user_id").references(() => user.id),
+    flagId: text("flag_id").references(() => data_flags.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({ vinFieldIdx: index("field_claims_vin_field_idx").on(t.vin, t.field) }),
+);
