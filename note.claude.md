@@ -30,10 +30,10 @@ iteration as a checkpoint on the branch so progress survives.
 - Don't auto-commit to main; don't push; don't run destructive git.
 
 ## Task order (from plan)
-- [x] T1 — DB: add M2 tables to schema.ts (additive)        ← DONE this iteration
-- [ ] T2 — middleware: requireOrg, requireTier, audit()
-- [ ] T2b — Zod validation schemas for new bodies
-- [ ] T6 — trust corroboration state machine + helpers
+- [x] T1 — DB: add M2 tables to schema.ts (additive)
+- [x] T2 — middleware: requireOrg, requireTier, audit() (authMiddleware.ts + audit.ts)
+- [x] T2b — Zod validation schemas for new bodies (validation.ts)
+- [ ] T6 — trust corroboration state machine + helpers   ← NEXT
 - [ ] T7 — credit ledger helper (append-only + balance)
 - [ ] T5 — decode free/premium serializer split
 - [ ] new vin endpoints: /decode (public free + gated premium), /history
@@ -51,7 +51,12 @@ iteration as a checkpoint on the branch so progress survives.
 - Trust penalty curve: confirm default (−5..−15 minority per confirmed bad entry).
 
 ## Progress log
-- 2026-06-23 iter1: branch created; note started. Adding full M2 schema (T1).
+- 2026-06-23 iter1: branch `milestone-2` created; note started; full M2 schema added (T1);
+  typecheck clean; committed d87696a.
+- 2026-06-23 iter2: T2 done — requireOrg/requireTier (authMiddleware.ts) + audit helper/middleware
+  (audit.ts); T2b done — M2 Zod schemas (validation.ts, incl. insurance intake minimization gate).
+  Note: exactOptionalPropertyTypes is ON — optional fields passed as possibly-undefined need
+  `?: T | undefined` in interfaces. Typecheck clean; committed 9fcbfc4. NEXT: T6 trust + T7 credit.
 
 ## Gotchas / learnings
 - crypto.randomUUID() is available globally (Node 22) — used by vehicle_ledger already.
@@ -60,4 +65,8 @@ iteration as a checkpoint on the branch so progress survives.
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-T2 — auth middleware (requireOrg/requireTier/audit) + T2b Zod schemas for the new endpoints.
+T6 + T7 — services/trustService.ts (corroboration state machine: open/append data_flag on a
+field conflict; resolve by majority at 3–4 entries; adjust minority score ONLY on resolution) and
+services/creditService.ts (append-only credit_ledger helper: award/spend with running balanceAfter,
+inside a tx with a row lock — use the configured CREDIT_REDEMPTION_MODE flag for redemption, default
+neutral/earn-only). Keep both as pure services callable from controllers; typecheck only (no DB run).
