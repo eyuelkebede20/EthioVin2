@@ -36,8 +36,10 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] T6 — trust corroboration state machine (services/trustService.ts + field_claims table)
 - [x] T7 — credit ledger helper (services/creditService.ts, append-only + advisory lock + balance)
 - [x] T5 — decode free/premium serializer split (services/decodeView.ts)
-- [ ] new vin endpoints: /decode (public free + gated premium), /history   ← NEXT
-- [ ] T9 — garage: jobs/appointments/parts/customers; job close → vehicle_event
+- [x] decode endpoints: /api/v1/decode/:vin (public free) + /:vin/full (premium) + audit
+- [ ] event ingestion spine: services/eventService.ts (write vehicle_event + idempotency +
+      trust-weighted credit + optional field corroboration). Shared by garage/insurance/diag.  ← NEXT
+- [ ] T9 — garage: jobs/appointments/parts/customers; job close → vehicle_event  (PAUSE: depth decision)
 - [ ] T10 — insurance reciprocal exchange (both minimization gates)
 - [ ] T8 — payments provider integration (ETB)
 - [ ] T11 — admin analytics + org onboarding
@@ -63,7 +65,9 @@ iteration as a checkpoint on the branch so progress survives.
   Trust curve confirmed "Forgiving start" (= default); committed 042d1c2.
 - 2026-06-23 iter4: T5 buildDecodeView (services/decodeView.ts) — free tier = basic spec teaser +
   history count; premium = full specs + history. Typecheck clean; committed ebd5e1f.
-  NEXT: /decode + /history endpoints (controller + routes).
+- 2026-06-23 iter5: decode endpoints (decodeController + decodeRoutes), public /decode/:vin mounted
+  outside auth in index.ts, premium /:vin/full audited. resolveVehicle reuses processVin lookup
+  order. Typecheck clean; committed a7d4b57. NEXT: eventService spine write path.
 
 ## Gotchas / learnings
 - crypto.randomUUID() is available globally (Node 22) — used by vehicle_ledger already.
@@ -72,12 +76,14 @@ iteration as a checkpoint on the branch so progress survives.
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-Endpoints: add a decodeController with
-  - GET /api/v1/decode/:vin  → PUBLIC, free tier (no auth). parseVin on server, look up
-    ledger/vds_cache like processVin does, build FREE view via buildDecodeView. This is the
-    public funnel — must be mounted OUTSIDE requireAuth (new public sub-app/route, still rate-limited).
-  - GET /api/v1/decode/:vin/full → requireAuth + requireTier("premium"): premium view with full
-    specs + history (read vehicle_events by vin, newest first) + writeAudit.
-Mind index.ts mounting: /api/v1/vin is behind apiLimiter (ok) but /scan uses requireAuth per-route,
-not router-wide — so I can add a PUBLIC decode route. Double-check no global requireAuth blocks it.
-Reuse parseVin, vds_cache/vehicle_ledger lookups. Loop RE-ARMED.
+services/eventService.ts — the shared spine write path used by garage/insurance/diagnostician:
+  ingestVehicleEvent(tx, { vin, eventType, occurredAt, recordedBy, orgId, sourceType, payload,
+  fields? }) →
+    - parseVin to canonical keyVin (server-derived)
+    - insert vehicle_event with an idempotencyKey = hash(orgId|vin|eventType|occurredAt); on
+      conflict do nothing (dup submit = no double credit)
+    - award trust-weighted credit via creditService.recordCredit (reason "data_input")
+    - for each declared field {field,value} run trustService.recordFieldClaim (corroboration)
+    - everything inside ONE db.transaction (caller passes tx OR wrap here)
+  Keep pure-ish (no req). Then T9 garage will call this on job close. After eventService, the
+  NEXT task is T9 → PAUSE for garage-depth decision before building it. Loop RE-ARMED.
