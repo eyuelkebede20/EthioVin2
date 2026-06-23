@@ -1,9 +1,11 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import vinRoutes from "./routes/vinRoutes.ts";
 import adminRoutes from "./routes/adminRoutes.ts";
+import decodeRoutes from "./routes/decodeRoutes.ts";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
 import { attachUser, requireRole } from "./middleware/authMiddleware.ts";
@@ -22,10 +24,25 @@ if (allowedOrigins.length === 0) {
 
 const app = express();
 
+// Don't advertise the framework/version to clients.
+app.disable("x-powered-by");
+
 // Behind cPanel/LiteSpeed (and most hosts) requests arrive via a reverse proxy
 // that sets X-Forwarded-For. Trust one proxy hop so req.ip is the real client IP
 // — without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
 app.set("trust proxy", 1);
+
+// Security headers (HSTS, X-Content-Type-Options, frameguard, referrer policy, …).
+// This is a JSON API consumed by a SEPARATE frontend origin: CSP only governs HTML
+// documents (we serve none) and helmet's default Cross-Origin-Resource-Policy of
+// "same-origin" would needlessly complicate cross-origin use, so both are relaxed
+// while every other hardening header is kept.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
 
 app.use(
   cors({
@@ -42,6 +59,12 @@ app.use(
   }),
 );
 
+// Liveness/readiness probe for the host + CI. Public and un-throttled so a
+// monitor can hit it freely; reveals nothing beyond "the process is up".
+app.get("/health", (_req: Request, res: Response) => {
+  res.json({ status: "ok" });
+});
+
 // Throttle credential endpoints to blunt brute-force / credential-stuffing.
 // Scoped to sign-in/sign-up so it doesn't throttle session polling (get-session).
 const authLimiter = rateLimit({
@@ -54,8 +77,10 @@ const authLimiter = rateLimit({
 app.use(["/api/auth/sign-in", "/api/auth/sign-up"], authLimiter);
 
 // better-auth must see the raw body, so it runs before express.json().
+// Match the mount exactly or as a path prefix — a bare startsWith("/api/auth")
+// would also capture unrelated paths like "/api/auth-status".
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.url.startsWith("/api/auth")) {
+  if (req.url === "/api/auth" || req.url.startsWith("/api/auth/")) {
     return toNodeHandler(auth)(req, res);
   }
   next();
@@ -70,6 +95,11 @@ app.use(attachUser);
 const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
 
 app.use("/api/v1/vin", apiLimiter, vinRoutes);
+
+// Public decode funnel: GET /api/v1/decode/:vin is intentionally un-authed (free
+// tier). attachUser still ran, so a logged-in premium user's /full sub-route can
+// resolve their tier. Rate-limited like the rest of the app surface.
+app.use("/api/v1/decode", apiLimiter, decodeRoutes);
 
 // Admin router is role-gated. requireRole already rejects unauthenticated users,
 // so it's used alone (not stacked with requireAuth).

@@ -71,8 +71,8 @@ export type DecodeView = FreeDecodeView | PremiumDecodeView;
  * Build the tier-appropriate decode response. `history` is the full event list;
  * on the free tier only its COUNT crosses the boundary, never the events.
  */
-export function buildDecodeView(args: { identity: VehicleIdentity; specs: Specs; history?: unknown[]; tier: Tier }): DecodeView {
-  const { identity, specs, history = [], tier } = args;
+export function buildDecodeView(args: { identity: VehicleIdentity; specs: Specs; history?: unknown[]; historyCount?: number; tier: Tier }): DecodeView {
+  const { identity, specs, history = [], historyCount, tier } = args;
 
   if (tier === "premium") {
     return {
@@ -87,7 +87,8 @@ export function buildDecodeView(args: { identity: VehicleIdentity; specs: Specs;
     tier: "free",
     vehicle: identity,
     specs: pickBasicSpecs(specs),
-    historyAvailable: history.length,
+    // Prefer an explicit count (free path only needs the number, not the events).
+    historyAvailable: historyCount ?? history.length,
     premiumLocked: true,
   };
 }
