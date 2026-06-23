@@ -46,9 +46,10 @@ iteration as a checkpoint on the branch so progress survives.
 - [ ] T12 — perf: pool size, indexes (mostly in schema), SSG/ISR
 - [ ] T13 — fix M1 conflict write-path (trust depends on it)
 
-## Open decisions (don't block phases 1–3; ask user when reached)
-- Garage-management depth: minimum vs full (before T9).
-- Trust penalty curve: confirm default (−5..−15 minority per confirmed bad entry).
+## Open decisions
+- [x] Trust penalty curve: CONFIRMED 2026-06-23 "Forgiving start" (2/3/−10, no escalation, floor 0)
+      = the coded default. TRUST_CONFIG in trustService.ts is now authoritative.
+- [ ] Garage-management depth: minimum vs full (ask before T9).
 
 ## Progress log
 - 2026-06-23 iter1: branch `milestone-2` created; note started; full M2 schema added (T1);
@@ -69,8 +70,7 @@ iteration as a checkpoint on the branch so progress survives.
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-PAUSED on the trust penalty curve decision (asked the user). Once answered: update TRUST_CONFIG
-in services/trustService.ts to match, then resume with T5 — split the decode response into free
-(make/model/year/basic specs) vs premium (full specs + history) serializers, one function with a
-tier param (req.tier from requireTier). Then the /decode (public free + gated premium) and /history
-endpoints. Re-arm the loop with ScheduleWakeup after the user answers.
+T5 — split decode response into free (make/model/year + basic specs) vs premium (full specs +
+history) serializers: one function with a tier param (req.tier from requireTier). Put in
+services/decodeView.ts or utils. Then wire the /decode (public free + gated premium) + /history
+endpoints in a later iteration. Loop is RE-ARMED.

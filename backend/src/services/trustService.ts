@@ -5,13 +5,14 @@ import { AppError } from "../middleware/errorHandler.ts";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-// TRUST PENALTY CURVE — proposed defaults, PENDING USER CONFIRMATION (open decision).
-// The shape is what matters: no value is authoritative until corroborated, and a
-// contributor's score is reduced ONLY when a conflict resolves against them.
+// TRUST PENALTY CURVE — CONFIRMED 2026-06-23 ("Forgiving start"): forgiving while
+// network data volume is low. The shape is what matters: no value is authoritative
+// until corroborated, and a contributor's score drops ONLY when a conflict resolves
+// against them. Revisit once VINs routinely get 3+ independent entries.
 export const TRUST_CONFIG = {
   corroborateAt: 2, // N agreeing entries to trust a value
   resolveAt: 3, // total entries before a conflict resolves by majority
-  minorityPenalty: 10, // score points removed per confirmed-wrong entry (proposed range 5–15)
+  minorityPenalty: 10, // score points removed per confirmed-wrong entry
   startScore: 100, // every account starts at 100%
   scoreFloor: 0,
 };
