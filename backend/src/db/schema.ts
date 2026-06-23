@@ -1,5 +1,5 @@
 // src/db/schema.ts  — corrected
-import { pgTable, jsonb, varchar, integer, primaryKey, index, pgEnum, timestamp, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, jsonb, varchar, integer, numeric, primaryKey, index, pgEnum, timestamp, foreignKey } from "drizzle-orm/pg-core";
 import { text, boolean } from "drizzle-orm/pg-core";
 
 export const statusEnum = pgEnum("status", ["pending", "verified", "rejected", "conflict"]);
@@ -159,4 +159,328 @@ export const vehicle_ledger = pgTable(
   },
   // ITEM 16: dropped vin_search_idx — .unique() on vin already creates an index.
   () => ({}),
+);
+
+// ============================================================================
+// MILESTONE 2 — platform tables (additive). See MILESTONE_2_PLAN.md.
+// vehicle_events is the spine: every contributor input becomes a trust-weighted,
+// credit-earning history record. Trust/credit are neutral infra (redemption flag-gated).
+// ============================================================================
+
+export const orgTypeEnum = pgEnum("org_type", ["garage", "insurer", "diagnostic"]);
+export const eventTypeEnum = pgEnum("event_type", ["inspection", "repair", "maintenance", "odometer", "ownership", "insurance_claim", "police_report", "accident"]);
+export const eventStatusEnum = pgEnum("event_status", ["active", "flagged", "disputed", "rejected"]);
+export const flagStatusEnum = pgEnum("flag_status", ["open", "corroborating", "resolved", "dismissed"]);
+export const creditReasonEnum = pgEnum("credit_reason", ["data_input", "verification", "referral", "redemption", "penalty", "exchange"]);
+export const jobStatusEnum = pgEnum("job_status", ["intake", "in_progress", "awaiting_parts", "done", "delivered", "cancelled"]);
+export const tierEnum = pgEnum("tier", ["free", "premium"]);
+export const paymentStatusEnum = pgEnum("payment_status", ["pending", "succeeded", "failed", "refunded"]);
+export const agreementStatusEnum = pgEnum("agreement_status", ["active", "revoked"]);
+
+// --- Identity / access expansion ---------------------------------------------
+
+export const organizations = pgTable("organizations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: varchar("name", { length: 200 }).notNull(),
+  type: orgTypeEnum("type").notNull(),
+  country: varchar("country", { length: 100 }),
+  city: varchar("city", { length: 100 }),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const organization_members = pgTable(
+  "organization_members",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    orgId: text("org_id").notNull().references(() => organizations.id),
+    userId: text("user_id").notNull().references(() => user.id),
+    orgRole: varchar("org_role", { length: 40 }).default("member").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    orgIdx: index("org_members_org_idx").on(t.orgId),
+    userIdx: index("org_members_user_idx").on(t.userId),
+  }),
+);
+
+// The in-system lawful basis for the reciprocal insurer data exchange (§3b).
+export const data_sharing_agreements = pgTable(
+  "data_sharing_agreements",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    orgId: text("org_id").notNull().references(() => organizations.id),
+    scope: jsonb("scope").notNull(), // what this org may submit / pull
+    acceptedBy: text("accepted_by").notNull().references(() => user.id),
+    acceptedAt: timestamp("accepted_at").defaultNow().notNull(),
+    status: agreementStatusEnum("status").default("active").notNull(),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (t) => ({ orgIdx: index("dsa_org_idx").on(t.orgId) }),
+);
+
+// --- Premium / payments ------------------------------------------------------
+
+export const premium_access = pgTable(
+  "premium_access",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => user.id),
+    tier: tierEnum("tier").default("free").notNull(),
+    status: varchar("status", { length: 20 }).default("active").notNull(),
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    expiresAt: timestamp("expires_at"),
+  },
+  (t) => ({ userIdx: index("premium_user_idx").on(t.userId) }),
+);
+
+export const payments = pgTable(
+  "payments",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => user.id),
+    amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 8 }).default("ETB").notNull(),
+    provider: varchar("provider", { length: 40 }),
+    providerRef: varchar("provider_ref", { length: 200 }),
+    // Idempotency: a duplicate provider webhook must grant premium exactly once.
+    idempotencyKey: varchar("idempotency_key", { length: 200 }).unique(),
+    status: paymentStatusEnum("status").default("pending").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({ userIdx: index("payments_user_idx").on(t.userId) }),
+);
+
+// --- Vehicle history spine ---------------------------------------------------
+
+export const vehicle_events = pgTable(
+  "vehicle_events",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    vin: varchar("vin", { length: 17 }).notNull(),
+    eventType: eventTypeEnum("event_type").notNull(),
+    occurredAt: timestamp("occurred_at"),
+    recordedBy: text("recorded_by").references(() => user.id),
+    orgId: text("org_id").references(() => organizations.id),
+    sourceType: varchar("source_type", { length: 40 }),
+    payload: jsonb("payload").notNull(),
+    trustWeight: numeric("trust_weight", { precision: 5, scale: 2 }).default("1.00").notNull(),
+    status: eventStatusEnum("status").default("active").notNull(),
+    creditAwarded: numeric("credit_awarded", { precision: 12, scale: 2 }).default("0").notNull(),
+    // Dedup a re-submitted input: (org, vin, type, occurredAt) hashed by the writer.
+    idempotencyKey: varchar("idempotency_key", { length: 200 }).unique(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    vinIdx: index("events_vin_idx").on(t.vin),
+    vinTypeIdx: index("events_vin_type_idx").on(t.vin, t.eventType),
+    recordedByIdx: index("events_recorded_by_idx").on(t.recordedBy),
+    occurredIdx: index("events_occurred_idx").on(t.occurredAt),
+  }),
+);
+
+// Odometer is fraud-critical: a later reading lower than an earlier one = rollback → flag.
+export const odometer_readings = pgTable(
+  "odometer_readings",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    vin: varchar("vin", { length: 17 }).notNull(),
+    readingKm: integer("reading_km").notNull(),
+    readAt: timestamp("read_at"),
+    source: varchar("source", { length: 40 }),
+    recordedBy: text("recorded_by").references(() => user.id),
+    orgId: text("org_id").references(() => organizations.id),
+    flagged: boolean("flagged").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({ vinIdx: index("odo_vin_idx").on(t.vin) }),
+);
+
+// --- Regulated tables (minimized; encryption-at-rest + RLS + audit at the app layer) ---
+
+export const insurance_claims = pgTable(
+  "insurance_claims",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    orgId: text("org_id").notNull().references(() => organizations.id),
+    vin: varchar("vin", { length: 17 }).notNull(),
+    // Minimized: only the derived health signal is stored — never the raw claim/PII.
+    incidentType: varchar("incident_type", { length: 40 }).notNull(),
+    severityBand: integer("severity_band").notNull(), // 1–5
+    incidentDate: timestamp("incident_date"),
+    payoutBand: varchar("payout_band", { length: 20 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    orgDateIdx: index("claims_org_date_idx").on(t.orgId, t.incidentDate),
+    vinIdx: index("claims_vin_idx").on(t.vin),
+  }),
+);
+
+export const police_reports = pgTable(
+  "police_reports",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    vin: varchar("vin", { length: 17 }).notNull(),
+    reportRef: varchar("report_ref", { length: 100 }),
+    incidentType: varchar("incident_type", { length: 40 }).notNull(),
+    severityBand: integer("severity_band"),
+    incidentDate: timestamp("incident_date"),
+    sourceOrgId: text("source_org_id").references(() => organizations.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({ vinIdx: index("police_vin_idx").on(t.vin) }),
+);
+
+// --- Garage management -------------------------------------------------------
+
+export const customers = pgTable(
+  "customers",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    orgId: text("org_id").notNull().references(() => organizations.id),
+    name: varchar("name", { length: 200 }).notNull(),
+    phone: varchar("phone", { length: 40 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({ orgIdx: index("customers_org_idx").on(t.orgId) }),
+);
+
+export const garage_jobs = pgTable(
+  "garage_jobs",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    orgId: text("org_id").notNull().references(() => organizations.id),
+    vin: varchar("vin", { length: 17 }),
+    customerId: text("customer_id").references(() => customers.id),
+    status: jobStatusEnum("status").default("intake").notNull(),
+    odometerIn: integer("odometer_in"),
+    totalCost: numeric("total_cost", { precision: 12, scale: 2 }).default("0").notNull(),
+    openedAt: timestamp("opened_at").defaultNow().notNull(),
+    closedAt: timestamp("closed_at"),
+    createdBy: text("created_by").references(() => user.id),
+  },
+  (t) => ({
+    orgStatusIdx: index("jobs_org_status_idx").on(t.orgId, t.status),
+    vinIdx: index("jobs_vin_idx").on(t.vin),
+  }),
+);
+
+export const garage_job_items = pgTable(
+  "garage_job_items",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    jobId: text("job_id").notNull().references(() => garage_jobs.id),
+    kind: varchar("kind", { length: 20 }).notNull(), // "labor" | "part"
+    description: varchar("description", { length: 300 }).notNull(),
+    qty: numeric("qty", { precision: 10, scale: 2 }).default("1").notNull(),
+    unitCost: numeric("unit_cost", { precision: 12, scale: 2 }).default("0").notNull(),
+  },
+  (t) => ({ jobIdx: index("job_items_job_idx").on(t.jobId) }),
+);
+
+export const appointments = pgTable(
+  "appointments",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    orgId: text("org_id").notNull().references(() => organizations.id),
+    vin: varchar("vin", { length: 17 }),
+    customerId: text("customer_id").references(() => customers.id),
+    scheduledAt: timestamp("scheduled_at").notNull(),
+    status: varchar("status", { length: 20 }).default("scheduled").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({ orgIdx: index("appts_org_idx").on(t.orgId) }),
+);
+
+export const parts = pgTable(
+  "parts",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    orgId: text("org_id").notNull().references(() => organizations.id),
+    name: varchar("name", { length: 200 }).notNull(),
+    sku: varchar("sku", { length: 80 }),
+    qtyOnHand: integer("qty_on_hand").default(0).notNull(),
+    reorderLevel: integer("reorder_level").default(0).notNull(),
+    unitCost: numeric("unit_cost", { precision: 12, scale: 2 }).default("0").notNull(),
+  },
+  (t) => ({ orgIdx: index("parts_org_idx").on(t.orgId) }),
+);
+
+// --- Trust / fraud scoring (Upwork-style) ------------------------------------
+
+export const contributor_scores = pgTable("contributor_scores", {
+  userId: text("user_id").primaryKey().references(() => user.id),
+  score: numeric("score", { precision: 5, scale: 2 }).default("100.00").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// A field conflict for a VIN. No entry is authoritative until corroborated;
+// scores change only when a flag RESOLVES, never on entry. (See plan §4.2.)
+export const data_flags = pgTable(
+  "data_flags",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    vin: varchar("vin", { length: 17 }).notNull(),
+    field: varchar("field", { length: 60 }).notNull(),
+    status: flagStatusEnum("status").default("open").notNull(),
+    entriesCount: integer("entries_count").default(1).notNull(),
+    resolvedValue: text("resolved_value"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    resolvedAt: timestamp("resolved_at"),
+  },
+  (t) => ({ vinFieldIdx: index("flags_vin_field_idx").on(t.vin, t.field, t.status) }),
+);
+
+export const score_adjustments = pgTable(
+  "score_adjustments",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => user.id),
+    delta: numeric("delta", { precision: 6, scale: 2 }).notNull(),
+    reason: varchar("reason", { length: 120 }).notNull(),
+    flagId: text("flag_id").references(() => data_flags.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({ userIdx: index("score_adj_user_idx").on(t.userId) }),
+);
+
+// --- Credit / reward economy (neutral infra; redemption flag-gated) ----------
+
+export const credit_ledger = pgTable(
+  "credit_ledger",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id").notNull().references(() => user.id),
+    delta: numeric("delta", { precision: 12, scale: 2 }).notNull(),
+    reason: creditReasonEnum("reason").notNull(),
+    eventId: text("event_id"),
+    // Running balance so reads don't SUM() the whole ledger.
+    balanceAfter: numeric("balance_after", { precision: 14, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({ userIdx: index("credit_user_idx").on(t.userId) }),
+);
+
+// --- Audit (append-only) — every sensitive read/write -----------------------
+
+export const audit_log = pgTable(
+  "audit_log",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    actorUserId: text("actor_user_id").references(() => user.id),
+    action: varchar("action", { length: 80 }).notNull(),
+    resourceType: varchar("resource_type", { length: 60 }),
+    resourceId: text("resource_id"),
+    orgId: text("org_id"),
+    ip: varchar("ip", { length: 60 }),
+    userAgent: text("user_agent"),
+    metadata: jsonb("metadata"),
+    at: timestamp("at").defaultNow().notNull(),
+  },
+  (t) => ({
+    actorIdx: index("audit_actor_idx").on(t.actorUserId),
+    resourceIdx: index("audit_resource_idx").on(t.resourceType, t.resourceId),
+  }),
 );
