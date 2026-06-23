@@ -33,9 +33,9 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] T1 — DB: add M2 tables to schema.ts (additive)
 - [x] T2 — middleware: requireOrg, requireTier, audit() (authMiddleware.ts + audit.ts)
 - [x] T2b — Zod validation schemas for new bodies (validation.ts)
-- [ ] T6 — trust corroboration state machine + helpers   ← NEXT
-- [ ] T7 — credit ledger helper (append-only + balance)
-- [ ] T5 — decode free/premium serializer split
+- [x] T6 — trust corroboration state machine (services/trustService.ts + field_claims table)
+- [x] T7 — credit ledger helper (services/creditService.ts, append-only + advisory lock + balance)
+- [ ] T5 — decode free/premium serializer split   ← NEXT (after trust-curve answer)
 - [ ] new vin endpoints: /decode (public free + gated premium), /history
 - [ ] T9 — garage: jobs/appointments/parts/customers; job close → vehicle_event
 - [ ] T10 — insurance reciprocal exchange (both minimization gates)
@@ -56,7 +56,11 @@ iteration as a checkpoint on the branch so progress survives.
 - 2026-06-23 iter2: T2 done — requireOrg/requireTier (authMiddleware.ts) + audit helper/middleware
   (audit.ts); T2b done — M2 Zod schemas (validation.ts, incl. insurance intake minimization gate).
   Note: exactOptionalPropertyTypes is ON — optional fields passed as possibly-undefined need
-  `?: T | undefined` in interfaces. Typecheck clean; committed 9fcbfc4. NEXT: T6 trust + T7 credit.
+  `?: T | undefined` in interfaces. Typecheck clean; committed 9fcbfc4.
+- 2026-06-23 iter3: T6 trustService + field_claims table; T7 creditService. Both use
+  pg_advisory_xact_lock for per-key serialization. Typecheck clean; committed dd8cf24.
+  LOOP PAUSED — asking user to confirm the trust penalty curve (TRUST_CONFIG in trustService.ts)
+  before relying on it. Built with proposed defaults (corroborateAt 2, resolveAt 3, penalty 10).
 
 ## Gotchas / learnings
 - crypto.randomUUID() is available globally (Node 22) — used by vehicle_ledger already.
@@ -65,8 +69,8 @@ iteration as a checkpoint on the branch so progress survives.
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-T6 + T7 — services/trustService.ts (corroboration state machine: open/append data_flag on a
-field conflict; resolve by majority at 3–4 entries; adjust minority score ONLY on resolution) and
-services/creditService.ts (append-only credit_ledger helper: award/spend with running balanceAfter,
-inside a tx with a row lock — use the configured CREDIT_REDEMPTION_MODE flag for redemption, default
-neutral/earn-only). Keep both as pure services callable from controllers; typecheck only (no DB run).
+PAUSED on the trust penalty curve decision (asked the user). Once answered: update TRUST_CONFIG
+in services/trustService.ts to match, then resume with T5 — split the decode response into free
+(make/model/year/basic specs) vs premium (full specs + history) serializers, one function with a
+tier param (req.tier from requireTier). Then the /decode (public free + gated premium) and /history
+endpoints. Re-arm the loop with ScheduleWakeup after the user answers.
