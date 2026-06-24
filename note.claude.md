@@ -43,8 +43,8 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] T8 — payments (ETB) idempotent webhook -> premium (paymentService/Controller/Routes)
 - [x] T11 — admin onboarding (orgs/members/agreements) + analytics (adminController/Routes)
 === BACKEND M2 FEATURE-COMPLETE ===
-- [ ] T3 — design system tokens (frontend)   ← NEXT (start Next.js scaffold)
-- [ ] T4 — Next.js shell + public/authed routing + SSR decode + login + paywall
+- [x] T3 — design tokens + Next.js web/ scaffold (globals.css tokens + tailwind.config + DESIGN.md)
+- [ ] T4 — Next.js pages: landing + public SSR decode + login + authed shell + paywall   ← NEXT (iter B)
 - [ ] T12 — perf: raise pool size (indexes already in schema), SSG/ISR free decode
 - [ ] T13 — fix M1 conflict write-path (trust depends on it)
 - [ ] DB migration: run db:generate + apply (hand to user; do NOT db:push)
@@ -97,7 +97,12 @@ iteration as a checkpoint on the branch so progress survives.
 - 2026-06-24 iter13: T11 admin onboarding (POST /admin/orgs, /orgs/members, /agreements; PATCH
   /agreements/:id/revoke) + GET /admin/analytics. Typecheck clean; committed 547754b.
   *** BACKEND M2 FEATURE-COMPLETE *** (decode/garage/insurance/payments/admin all done).
-  NEXT: frontend — Next.js scaffold + design tokens (T3/T4), built incrementally.
+- 2026-06-24 iter14: T3 frontend scaffold — web/ Next.js 15 app (package.json/next.config/tsconfig/
+  postcss/tailwind.config), PURE DESIGN SYSTEM tokens in app/globals.css (warm orange/amber, type
+  scale, radius, elevation, motion) + component primitives (.btn-brand/.btn-ghost/.card), layout,
+  placeholder home, DESIGN.md, favicon, .env.example. Committed 39ce064.
+  *** NOT typechecked/installed *** — user must `cd web && npm install` before `npm run dev`.
+  Frontend files validated by review only (no Next toolchain in loop). NEXT: T4 landing+decode pages.
 
 ## Pending DB migration (hand to user; do NOT run db:push)
 Schema changed since M1 (all additive): all M2 tables (T1) + field_claims + garage_jobs.paid/paidAt.
@@ -109,15 +114,17 @@ Generate with `npm run db:generate` and apply via adjust.sql/generated migration
 - No DATABASE_URL guaranteed locally → I can typecheck but should NOT run db:push; will
   generate migration files only when safe, else hand off migration to user.
 
-## Next iteration — FRONTEND starts (incremental Next.js re-platform)
-Scaffold a NEW Next.js app in `web/` (keep `client/` during cutover; deploy web/ to Vercel later).
-Iter A (T3 design tokens + skeleton): create web/package.json (next 15, react 19, tailwind), 
-  next.config, tsconfig, postcss/tailwind config with a PURE DESIGN SYSTEM token layer (CSS vars
-  in globals.css: colors warm orange/amber to match brand, type scale, spacing, radius, shadow,
-  motion), app/layout.tsx, a tokens doc. Do NOT npm install (no network assumed) — just author files;
-  note that `cd web && npm install` is needed before dev. Keep VITE→NEXT env: NEXT_PUBLIC_BACKEND_URL.
-Iter B (T4): landing page (what EthioVin does, from claude.second.md vision) + public SSR decode
-  page calling GET /api/v1/decode/:vin. Iter C: login + authed shell + premium paywall.
-Reuse logic from client/src components where helpful (VehicleSpecsCard etc.) but rebuild as RSC/Tailwind.
-Note: I can't run `next dev` reliably (no install) — focus on correct source files + typecheck-by-eye;
-flag that the user runs `cd web && npm install && npm run dev`. Loop RE-ARMED.
+## Next iteration — T4 iter B (landing + public decode)
+In web/: build the public funnel.
+  - lib/api.ts — tiny fetch wrapper around NEXT_PUBLIC_BACKEND_URL (server + client), typed
+    DecodeView (free|premium) mirroring backend services/decodeView.ts shapes.
+  - components/SiteHeader.tsx (logo + nav + Sign in), components/VinSearch.tsx (client: VIN input,
+    keeps I/O/Q, caps 17, routes to /decode/[vin]).
+  - app/page.tsx — REAL landing: hero ("what EthioVin does" from claude.second.md vision: free
+    basics + premium full history from garages/insurers/inspections; self-improving network), VIN
+    search CTA, "how it works" (decode→history→trust), tiers (free vs premium) section.
+  - app/decode/[vin]/page.tsx — SSR: server-fetch GET /api/v1/decode/:vin (free view), render
+    identity + basic spec teaser + "X history records — unlock with premium" paywall card. Reuse
+    a rebuilt VehicleSpecsCard styled on tokens. Shareable/crawlable (the SPA gap we fixed).
+Use ONLY design-system tokens/classes. Still no install — author + review. Iter C after: login +
+authed shell + paywall checkout (calls /payments/init). Loop RE-ARMED.
