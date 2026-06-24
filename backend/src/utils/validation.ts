@@ -230,6 +230,17 @@ export const partSchema = z.object({
   unitCost: z.coerce.number().min(0).max(100_000_000).default(0),
 });
 
+// All fields optional. `qtyDelta` adjusts stock relative to current (e.g. -2 on
+// use, +50 on restock); absolute `qtyOnHand` is also accepted. Use one or the other.
+export const updatePartSchema = z.object({
+  name: shortText.optional(),
+  sku: z.string().trim().max(80).optional(),
+  qtyOnHand: z.coerce.number().int().min(0).max(1_000_000).optional(),
+  qtyDelta: z.coerce.number().int().min(-1_000_000).max(1_000_000).optional(),
+  reorderLevel: z.coerce.number().int().min(0).max(1_000_000).optional(),
+  unitCost: z.coerce.number().min(0).max(100_000_000).optional(),
+});
+
 // --- Payments ---
 export const paymentInitSchema = z.object({
   amount: z.coerce.number().positive().max(10_000_000),

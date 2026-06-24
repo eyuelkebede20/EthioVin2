@@ -1,11 +1,11 @@
 import type { Request, Response } from "express";
 import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
-import { customers, garage_jobs, garage_job_items, odometer_readings, appointments } from "../db/schema.ts";
+import { customers, garage_jobs, garage_job_items, odometer_readings, appointments, parts } from "../db/schema.ts";
 import { parseVin } from "../utils/vin.ts";
 import { ingestVehicleEvent } from "../services/eventService.ts";
 import { AppError } from "../middleware/errorHandler.ts";
-import { customerSchema, createGarageJobSchema, updateGarageJobSchema, appointmentSchema, updateAppointmentSchema, JOB_STATUSES, APPOINTMENT_STATUSES } from "../utils/validation.ts";
+import { customerSchema, createGarageJobSchema, updateGarageJobSchema, appointmentSchema, updateAppointmentSchema, partSchema, updatePartSchema, JOB_STATUSES, APPOINTMENT_STATUSES } from "../utils/validation.ts";
 
 // requireOrg("garage") guarantees both, but narrow for the type-checker.
 function ctx(req: Request): { userId: string; orgId: string } {
@@ -214,5 +214,47 @@ export const updateAppointment = async (req: Request, res: Response) => {
 
   const updated = await db.update(appointments).set(set).where(and(eq(appointments.id, id), eq(appointments.orgId, orgId))).returning();
   if (!updated[0]) throw new AppError(404, "Appointment not found");
+  return res.json(updated[0]);
+};
+
+// ---------------------------------------------------------------------------
+// Parts inventory — scoped to the caller's org.
+// ---------------------------------------------------------------------------
+export const createPart = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const body = partSchema.parse(req.body);
+  const [row] = await db
+    .insert(parts)
+    .values({ orgId, name: body.name, sku: body.sku ?? null, qtyOnHand: body.qtyOnHand, reorderLevel: body.reorderLevel, unitCost: String(body.unitCost) })
+    .returning();
+  return res.status(201).json(row);
+};
+
+export const listParts = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const lowStock = req.query.lowStock === "true";
+  const where = lowStock ? and(eq(parts.orgId, orgId), sql`${parts.qtyOnHand} <= ${parts.reorderLevel}`) : eq(parts.orgId, orgId);
+  const rows = await db.select().from(parts).where(where).orderBy(asc(parts.name));
+  return res.json(rows);
+};
+
+export const updatePart = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const id = String(req.params.id ?? "");
+  const body = updatePartSchema.parse(req.body);
+  if (body.qtyOnHand !== undefined && body.qtyDelta !== undefined) throw new AppError(400, "Use qtyOnHand or qtyDelta, not both");
+
+  const set: Record<string, unknown> = {};
+  if (body.name !== undefined) set.name = body.name;
+  if (body.sku !== undefined) set.sku = body.sku;
+  if (body.reorderLevel !== undefined) set.reorderLevel = body.reorderLevel;
+  if (body.unitCost !== undefined) set.unitCost = String(body.unitCost);
+  if (body.qtyOnHand !== undefined) set.qtyOnHand = body.qtyOnHand;
+  // Relative stock adjustment, floored at 0, applied atomically in SQL.
+  else if (body.qtyDelta !== undefined) set.qtyOnHand = sql`greatest(0, ${parts.qtyOnHand} + ${body.qtyDelta})`;
+  if (Object.keys(set).length === 0) throw new AppError(400, "No fields to update");
+
+  const updated = await db.update(parts).set(set).where(and(eq(parts.id, id), eq(parts.orgId, orgId))).returning();
+  if (!updated[0]) throw new AppError(404, "Part not found");
   return res.json(updated[0]);
 };
