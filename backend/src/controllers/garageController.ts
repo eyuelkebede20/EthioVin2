@@ -218,6 +218,46 @@ export const updateAppointment = async (req: Request, res: Response) => {
 };
 
 // ---------------------------------------------------------------------------
+// Invoice / receipt — derived from a job + its items. Scoped to the caller's org.
+// ---------------------------------------------------------------------------
+export const getInvoice = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const id = String(req.params.id ?? "");
+
+  const [job] = await db.select().from(garage_jobs).where(and(eq(garage_jobs.id, id), eq(garage_jobs.orgId, orgId))).limit(1);
+  if (!job) throw new AppError(404, "Job not found");
+
+  const items = await db.select().from(garage_job_items).where(eq(garage_job_items.jobId, id));
+  const lines = items.map((i) => ({ ...i, lineTotal: Math.round(Number(i.qty) * Number(i.unitCost) * 100) / 100 }));
+  const subtotal = Math.round(lines.reduce((s, l) => s + l.lineTotal, 0) * 100) / 100;
+
+  let customer = null;
+  if (job.customerId) {
+    const [c] = await db.select({ name: customers.name, phone: customers.phone }).from(customers).where(and(eq(customers.id, job.customerId), eq(customers.orgId, orgId))).limit(1);
+    customer = c ?? null;
+  }
+
+  return res.json({
+    invoiceNumber: `INV-${id.slice(0, 8).toUpperCase()}`,
+    job: { id: job.id, vin: job.vin, status: job.status, openedAt: job.openedAt, closedAt: job.closedAt },
+    customer,
+    lines,
+    subtotal,
+    total: Number(job.totalCost),
+    paid: job.paid,
+    paidAt: job.paidAt,
+  });
+};
+
+export const payInvoice = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const id = String(req.params.id ?? "");
+  const updated = await db.update(garage_jobs).set({ paid: true, paidAt: new Date() }).where(and(eq(garage_jobs.id, id), eq(garage_jobs.orgId, orgId))).returning();
+  if (!updated[0]) throw new AppError(404, "Job not found");
+  return res.json({ id: updated[0].id, paid: updated[0].paid, paidAt: updated[0].paidAt });
+};
+
+// ---------------------------------------------------------------------------
 // Parts inventory — scoped to the caller's org.
 // ---------------------------------------------------------------------------
 export const createPart = async (req: Request, res: Response) => {

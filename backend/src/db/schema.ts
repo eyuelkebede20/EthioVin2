@@ -359,6 +359,8 @@ export const garage_jobs = pgTable(
     totalCost: numeric("total_cost", { precision: 12, scale: 2 }).default("0").notNull(),
     openedAt: timestamp("opened_at").defaultNow().notNull(),
     closedAt: timestamp("closed_at"),
+    paid: boolean("paid").default(false).notNull(),
+    paidAt: timestamp("paid_at"),
     createdBy: text("created_by").references(() => user.id),
   },
   (t) => ({
