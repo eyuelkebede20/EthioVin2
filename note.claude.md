@@ -38,12 +38,8 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] T5 — decode free/premium serializer split (services/decodeView.ts)
 - [x] decode endpoints: /api/v1/decode/:vin (public free) + /:vin/full (premium) + audit
 - [x] event ingestion spine: services/eventService.ts (ingestVehicleEvent + recordVehicleEvent)
-- [ ] T9 — garage (FULL). Sub-iters, all scoped requireOrg("garage"):
-      - [x] T9a — customers + jobs + items + totals + job-close event emit + odometer (garageController)
-      - [x] T9b — appointments (create/list w/ status+date filters/reschedule+status)
-      - [x] T9c — parts inventory (create/list w/ lowStock/patch w/ qtyDelta)
-      - [ ] T9d — invoicing/receipt totals (derive from job items; mark paid)   ← NEXT
-- [ ] T10 — insurance reciprocal exchange (both minimization gates)
+- [x] T9 — garage (FULL) COMPLETE: T9a core+job-close-emit, T9b appointments, T9c parts, T9d invoicing.
+- [ ] T10 — insurance reciprocal exchange (both minimization gates)   ← NEXT
 - [ ] T8 — payments provider integration (ETB)
 - [ ] T11 — admin analytics + org onboarding
 - [ ] T3 — design system tokens (frontend)
@@ -83,7 +79,13 @@ iteration as a checkpoint on the branch so progress survives.
   req.org.id. updateAppointmentSchema added. Typecheck clean; committed a334413.
   Note: classifier (PowerShell AND Bash) intermittently unavailable — retry the command, it clears.
 - 2026-06-24 iter9: T9c parts inventory (create/list ?lowStock/patch w/ atomic qtyDelta). Scoped
-  req.org.id. updatePartSchema added. Typecheck clean; committed 5e26541. NEXT: T9d invoicing.
+  req.org.id. updatePartSchema added. Typecheck clean; committed 5e26541.
+- 2026-06-24 iter10: T9d invoicing (garage_jobs.paid/paidAt additive; GET /jobs/:id/invoice derive,
+  PATCH /jobs/:id/pay). FULL GARAGE COMPLETE. Typecheck clean; committed fd5e1d6. NEXT: T10 insurance.
+
+## Pending DB migration (hand to user; do NOT run db:push)
+Schema changed since M1 (all additive): all M2 tables (T1) + field_claims + garage_jobs.paid/paidAt.
+Generate with `npm run db:generate` and apply via adjust.sql/generated migration when user confirms DB.
 
 ## Gotchas / learnings
 - crypto.randomUUID() is available globally (Node 22) — used by vehicle_ledger already.
@@ -92,13 +94,19 @@ iteration as a checkpoint on the branch so progress survives.
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-T9d — invoicing/receipt for a job (closes out the full garage feature). In garageController:
-  - GET /jobs/:id/invoice — scoped org; returns a derived invoice: job + items (with line totals
-    qty*unitCost) + subtotal (= job.totalCost) + a generated invoice number (e.g. INV-<short id>)
-    + the customer (name/phone) + paid status. Pure read/derive (no new heavy tables); add a
-    `paid` boolean + `paidAt` to garage_jobs via schema (additive) OR track via job status.
-    DECISION (no user needed): add `paid` boolean default false + `paidAt` timestamp to garage_jobs
-    (additive migration) so an invoice can be marked paid.
-  - PATCH /jobs/:id/pay — mark paid (set paid=true, paidAt=now), scoped org, 404 if not owned.
-  Update schema.ts garage_jobs (+ typecheck). Then T10 insurance reciprocal exchange (§3b).
-  Loop RE-ARMED. (Classifier intermittently down — just retry the typecheck command.)
+T10 — insurance reciprocal exchange (§3b). New insuranceController + insuranceRoutes, mounted
+/api/v1/insurance, gated requireOrg("insurer"). Require an active data_sharing_agreement for the
+org (helper: assertAgreement(orgId) -> 403 if none active). Endpoints:
+  - POST /claims (insuranceClaimIntakeSchema) — INTAKE MINIMIZATION GATE: Zod already strips extra
+    fields; insert ONLY {orgId, vin(canonical), incidentType, severityBand, incidentDate?, payoutBand?}
+    into insurance_claims. Also emit a vehicle_event(type insurance_claim) via ingestVehicleEvent
+    (recordedBy req.user.id, orgId) so it credits the insurer + lands in history. writeAudit.
+  - POST /police-reports (policeReportIntakeSchema) — same pattern -> police_reports + event + audit.
+  - GET /vehicles/:vin — EGRESS: the "insurer view" = decoded identity + HEALTH GRADE + event SUMMARY
+    (NO garage customer PII, NO other insurers' raw rows). Reuse decodeController.resolveVehicle for
+    identity; compute a simple health grade from events (claims severity + odometer flags + accident
+    count). writeAudit on read. Spend a credit (barter) via creditService.recordCredit(reason
+    "exchange", negative) — but keep it best-effort/flagged by CREDIT_REDEMPTION_MODE neutral (just
+    record the exchange debit). Add data_sharing_agreement create/accept under admin/onboarding later (T11).
+  Need: assertAgreement helper, a healthGrade(events) helper (put in services/healthGrade.ts).
+  All scoped req.org.id. Loop RE-ARMED.
