@@ -38,7 +38,12 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] T5 — decode free/premium serializer split (services/decodeView.ts)
 - [x] decode endpoints: /api/v1/decode/:vin (public free) + /:vin/full (premium) + audit
 - [x] event ingestion spine: services/eventService.ts (ingestVehicleEvent + recordVehicleEvent)
-- [ ] T9 — garage: jobs/appointments/parts/customers; job close → vehicle_event  ← PAUSED: depth decision
+- [ ] T9 — garage (FULL). Sub-iters, all scoped requireOrg("garage"):
+      - [ ] T9a — customers CRUD + jobs (create/list/get/update) + job items + cost totals +
+            job close → ingestVehicleEvent (maintenance/repair) + odometer reading + credit   ← NEXT
+      - [ ] T9b — appointments (create/list/update/cancel)
+      - [ ] T9c — parts inventory (CRUD + qtyOnHand/reorderLevel + low-stock list)
+      - [ ] T9d — invoicing/receipt totals (derive from job items; mark paid)
 - [ ] T10 — insurance reciprocal exchange (both minimization gates)
 - [ ] T8 — payments provider integration (ETB)
 - [ ] T11 — admin analytics + org onboarding
@@ -50,7 +55,9 @@ iteration as a checkpoint on the branch so progress survives.
 ## Open decisions
 - [x] Trust penalty curve: CONFIRMED 2026-06-23 "Forgiving start" (2/3/−10, no escalation, floor 0)
       = the coded default. TRUST_CONFIG in trustService.ts is now authoritative.
-- [ ] Garage-management depth: minimum vs full (ask before T9).
+- [x] Garage-management depth: CONFIRMED 2026-06-24 FULL — customers/CRM, jobs+items+totals,
+      appointments, parts inventory+reorder, invoicing, job close→event. Build across sub-iters.
+- (none open now — all M2 decisions resolved)
 
 ## Progress log
 - 2026-06-23 iter1: branch `milestone-2` created; note started; full M2 schema added (T1);
@@ -78,8 +85,14 @@ iteration as a checkpoint on the branch so progress survives.
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-PAUSED on the garage-management depth decision (asked the user). Once answered, build T9 garage
-controller + routes scoped by requireOrg("garage"): customers, jobs (+ items), and on job close
-call eventService.ingestVehicleEvent (maintenance/repair event + odometer reading + corroborate
-the make/model fields). Depth (minimum vs full = + appointments/parts/invoicing) per the answer.
-Then T10 insurance reciprocal exchange. Re-arm the loop with ScheduleWakeup AFTER the user answers.
+T9a — garageController + garageRoutes (mounted /api/v1/garage, gated requireOrg("garage")):
+  - customers: POST create, GET list (scoped req.org.id)
+  - jobs: POST create (+ optional items), GET list (filter by status), GET :id (with items),
+    PATCH :id (status/odometer/items + recompute totalCost from items)
+  - job close (status -> done/delivered): inside a tx, recompute total, then
+    ingestVehicleEvent({ vin, eventType:"maintenance"|"repair", recordedBy:req.user.id,
+    orgId:req.org.id, sourceType:"garage", payload:{items,total}, occurredAt:closedAt,
+    fields:[{field:"odometer",value:odometerIn}] }) AND insert an odometer_readings row
+    (flag if lower than the latest existing reading for that vin).
+  Use Zod: customerSchema, createGarageJobSchema, updateGarageJobSchema (already in validation.ts).
+  ALL queries scoped by req.org.id (the IDOR boundary). Then T9b appointments. Loop RE-ARMED.
