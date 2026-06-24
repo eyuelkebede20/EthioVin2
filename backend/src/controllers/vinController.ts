@@ -32,22 +32,23 @@ export const processVin = async (req: Request, res: Response) => {
     return res.json({ hit: true, patientExists: true, data: ledgerRow });
   }
 
-  // 3. PREDICT MAKE from the WMI mapping (Unknown if we've never seen it).
-  let predictedManufacturer = "Unknown";
-  const wmiRecord = await db.select().from(wmi_mapping).where(eq(wmi_mapping.wmi, wmi)).limit(1);
-  if (wmiRecord[0]) {
-    predictedManufacturer = wmiRecord[0].manufacturer;
-  }
+  // 3. WMI prediction + DNA cache check are independent lookups — run them in
+  //    parallel (postgres-js pipelines them over the single connection) instead
+  //    of paying two sequential round-trips on every cache-hit/miss.
+  const [wmiRecord, cachedData] = await Promise.all([
+    // PREDICT MAKE from the WMI mapping (Unknown if we've never seen it).
+    db.select().from(wmi_mapping).where(eq(wmi_mapping.wmi, wmi)).limit(1),
+    // DNA CACHE CHECK — same (wmi, vds_code) = same model, different VIS still hits.
+    db
+      .select()
+      .from(vds_cache)
+      .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)))
+      .leftJoin(vehicle_specs, eq(vds_cache.spec_id, vehicle_specs.id))
+      .limit(1),
+  ]);
 
+  const predictedManufacturer = wmiRecord[0]?.manufacturer ?? "Unknown";
   const extractedData = { wmi, vds_code, year, manufacturer: predictedManufacturer };
-
-  // 4. DNA CACHE CHECK — same (wmi, vds_code) = same model, different VIS still hits.
-  const cachedData = await db
-    .select()
-    .from(vds_cache)
-    .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)))
-    .leftJoin(vehicle_specs, eq(vds_cache.spec_id, vehicle_specs.id))
-    .limit(1);
 
   const cacheRow = cachedData[0];
   if (cacheRow) {
@@ -113,7 +114,7 @@ export const saveVehicleToLedger = async (req: Request, res: Response) => {
   // Derive the cache key the SAME way processVin does — never trust client values.
   const { keyVin, wmi, vds_code, vis, plant } = parseVin(body.vin);
 
-  await db.transaction(async (tx) => {
+  const record = await db.transaction(async (tx) => {
     // 1. Save the shared spec blob (Brain 2).
     const [savedSpec] = await tx.insert(vehicle_specs).values({ hardware_specs: hardwareSpecs }).returning({ id: vehicle_specs.id });
     if (!savedSpec) throw new AppError(500, "Failed to persist specifications");
@@ -147,13 +148,15 @@ export const saveVehicleToLedger = async (req: Request, res: Response) => {
       hardware_specs: hardwareSpecs,
       scannedBy: userId,
     };
-    await tx
+    // Return the upserted row directly — no need for a follow-up SELECT round-trip.
+    const [row] = await tx
       .insert(vehicle_ledger)
       .values(values)
-      .onConflictDoUpdate({ target: vehicle_ledger.vin, set: { ...values, updatedAt: new Date() } });
+      .onConflictDoUpdate({ target: vehicle_ledger.vin, set: { ...values, updatedAt: new Date() } })
+      .returning();
+    return row;
   });
 
-  const [record] = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, keyVin)).limit(1);
   return res.json({ success: true, record });
 };
 
@@ -227,8 +230,8 @@ export const submitVerifiedSpec = async (req: Request, res: Response) => {
 
   const { wmi, vds_code, hardware_specs } = submitVerifiedSpecSchema.parse(req.body);
 
-  await db.transaction(async (tx) => {
-    // 1. Insert the verified specification blob.
+  const outcome: "verified" | "conflict" = await db.transaction(async (tx) => {
+    // 1. Insert the proposed specification blob.
     const [newSpec] = await tx.insert(vehicle_specs).values({ hardware_specs }).returning({ id: vehicle_specs.id });
     if (!newSpec) throw new AppError(500, "Failed to persist specifications");
     const specId = newSpec.id;
@@ -236,20 +239,53 @@ export const submitVerifiedSpec = async (req: Request, res: Response) => {
     // 2. Ensure the parent WMI row exists before the cache FK references it.
     await tx.insert(wmi_mapping).values({ wmi, manufacturer: "Unknown" }).onConflictDoNothing();
 
-    // 3. Log who submitted it.
+    // 3. Log the proposal (ConflictsPanel joins verification_log to show competing specs).
     await tx.insert(verification_log).values({ wmi, vds_code, admin_id, proposed_spec_id: specId });
 
-    // 4. Upsert the cache entry.
-    await tx
-      .insert(vds_cache)
-      .values({ wmi, vds_code, spec_id: specId, status: "verified" })
-      .onConflictDoUpdate({
-        target: [vds_cache.wmi, vds_cache.vds_code],
-        set: { spec_id: specId, status: "verified", updated_at: new Date() },
-      });
+    // 4. Look at the existing cache row + its current spec blob to decide verified vs conflict.
+    const [existing] = await tx
+      .select({ status: vds_cache.status, specs: vehicle_specs.hardware_specs })
+      .from(vds_cache)
+      .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)))
+      .leftJoin(vehicle_specs, eq(vds_cache.spec_id, vehicle_specs.id))
+      .limit(1);
+
+    if (!existing) {
+      // Brand-new key — accept as verified.
+      await tx.insert(vds_cache).values({ wmi, vds_code, spec_id: specId, status: "verified" });
+      return "verified";
+    }
+
+    if (existing.status === "verified") {
+      // A second proposal for an already-verified key. If it DIFFERS, flag a conflict
+      // for super-admin review (keep the original verified spec in place — don't clobber
+      // it); if identical, leave it verified. (Comparison is order-sensitive on the JSON
+      // blob — the spec editor emits stable key order, so this is sufficient in practice.)
+      const differs = JSON.stringify(existing.specs ?? null) !== JSON.stringify(hardware_specs);
+      await tx
+        .update(vds_cache)
+        .set(differs ? { status: "conflict", updated_at: new Date() } : { updated_at: new Date() })
+        .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)));
+      return differs ? "conflict" : "verified";
+    }
+
+    if (existing.status === "conflict") {
+      // Already under review — this proposal is logged (step 3) but we don't auto-resolve;
+      // POST /resolve picks the winner.
+      await tx.update(vds_cache).set({ updated_at: new Date() }).where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)));
+      return "conflict";
+    }
+
+    // pending / rejected — accept this proposal as the verified spec.
+    await tx.update(vds_cache).set({ spec_id: specId, status: "verified", updated_at: new Date() }).where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)));
+    return "verified";
   });
 
-  return res.json({ success: true, message: "Specification saved successfully." });
+  return res.json({
+    success: true,
+    status: outcome,
+    message: outcome === "conflict" ? "A differing specification already exists for this model — your proposal was recorded for review." : "Specification saved successfully.",
+  });
 };
 
 // ---------------------------------------------------------------------------
