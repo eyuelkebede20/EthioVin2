@@ -46,8 +46,9 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] T3 — design tokens + Next.js web/ scaffold (globals.css tokens + tailwind.config + DESIGN.md)
 - [~] T4 — Next.js pages (incremental):
       - [x] iter B — lib/api.ts, SiteHeader, VinSearch, landing page, SSR /decode/[vin]
-      - [ ] iter C — login/signup + authed shell + premium paywall checkout (/payments/init)   ← NEXT
-      - [ ] iter D — authed dashboards (garage/insurer/admin) — large; may split further
+      - [x] iter C — auth-client, login/signup, AuthNav island, account + paywall checkout
+      - [ ] iter D — authed dashboards (garage/insurer/admin) — large; split: D1 garage, D2 insurer,
+            D3 super_admin analytics + onboarding   ← NEXT (D1 garage)
 - [ ] T12 — perf: raise pool size (indexes already in schema), SSG/ISR free decode
 - [ ] T13 — fix M1 conflict write-path (trust depends on it)
 - [ ] DB migration: run db:generate + apply (hand to user; do NOT db:push)
@@ -110,6 +111,11 @@ iteration as a checkpoint on the branch so progress survives.
   (client, keeps I/O/Q), real landing (hero/how-it-works/network/tiers), SSR app/decode/[vin] (free
   view + paywall). Token-only. Committed 0892896. Still not installed. NEXT: login + authed shell.
   Next 15 note: dynamic route params is a Promise — `const { vin } = await params`.
+- 2026-06-24 iter16: T4 iter C auth+paywall — lib/auth-client.ts (better-auth/react + adminClient),
+  app/login (signin/up, Suspense around useSearchParams), AuthNav island in SiteHeader, app/account
+  (premium CTA -> /payments/init -> checkout + history). better-auth added to web deps. Committed
+  a4f49bb. Still not installed. NEXT: iter D dashboards (split D1 garage / D2 insurer / D3 admin).
+  Note: checkout.checkoutUrl is the STUB url (pay.stub.local) — won't load until real ETB provider.
 
 ## Pending DB migration (hand to user; do NOT run db:push)
 Schema changed since M1 (all additive): all M2 tables (T1) + field_claims + garage_jobs.paid/paidAt.
@@ -121,16 +127,15 @@ Generate with `npm run db:generate` and apply via adjust.sql/generated migration
 - No DATABASE_URL guaranteed locally → I can typecheck but should NOT run db:push; will
   generate migration files only when safe, else hand off migration to user.
 
-## Next iteration — T4 iter C (auth + paywall checkout)
-better-auth client in web/ (npm i better-auth later; for now author lib/auth-client.ts using
-createAuthClient from "better-auth/react" pointing at NEXT_PUBLIC_BACKEND_URL; baseURL is the API).
-  - app/login/page.tsx — combined sign-in/sign-up (email+password min8), honors ?next= redirect,
-    on success router.push(next ?? "/account"). Uses authClient.signIn/signUp.email.
-  - components/SiteHeader: make it a client comp OR add an auth-aware variant showing the user/role
-    + sign out when a session exists (authClient.useSession). Keep server SiteHeader for public pages,
-    add components/AuthNav.tsx client island.
-  - app/account/page.tsx — client: show session, premium status, a "Get premium" button that calls
-    POST /api/v1/payments/init then opens checkout.checkoutUrl (stub), and "Decode full" entry.
-  - lib/api.ts: add postInitPayment(amount, provider) + getMe helpers.
-Token-only styling. Still no install (note better-auth + lucide already in deps? add better-auth to
-web/package.json deps). Then iter D dashboards. Loop RE-ARMED.
+## Next iteration — T4 iter D1 (garage dashboard)
+In web/: app/garage/* authed dashboard for garage-org members. Add lib/api.ts helpers for garage
+endpoints (listJobs/createJob/getJob/updateJob/customers/appointments/parts/invoice/pay — all
+credentials-included client calls). Pages (client components, useSession-gated, redirect to /login
+if not authed; show a "not a garage member" notice if no garage org):
+  - app/garage/page.tsx — jobs board (list w/ status filter, create job modal, open/close jobs).
+  - app/garage/jobs/[id]/page.tsx — job detail (items editor, close-job, view invoice + mark paid).
+  - app/garage/customers, /appointments, /parts — simple list+create.
+Reuse design tokens + a shared components/AppShell (sidebar nav for garage sections). Keep it real
+but lean per section; the backend already enforces org scoping. Still NO install — author + review.
+Then D2 insurer (claim/police intake + vehicle lookup view), D3 super_admin (analytics + onboarding).
+Loop RE-ARMED.
