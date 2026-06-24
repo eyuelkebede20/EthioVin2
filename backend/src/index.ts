@@ -8,6 +8,7 @@ import adminRoutes from "./routes/adminRoutes.ts";
 import decodeRoutes from "./routes/decodeRoutes.ts";
 import garageRoutes from "./routes/garageRoutes.ts";
 import insuranceRoutes from "./routes/insuranceRoutes.ts";
+import paymentRoutes from "./routes/paymentRoutes.ts";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
 import { attachUser, requireRole, requireOrg } from "./middleware/authMiddleware.ts";
@@ -109,6 +110,10 @@ app.use("/api/v1/garage", apiLimiter, requireOrg("garage"), garageRoutes);
 // Insurance reciprocal exchange — gated to insurer-org members (+ an active
 // data-sharing agreement, enforced per-handler). Minimized intake, insurer-view egress.
 app.use("/api/v1/insurance", apiLimiter, requireOrg("insurer"), insuranceRoutes);
+
+// Payments — /init + /me require auth; /webhook is public (provider callback,
+// signature-gated and idempotent). Per-route guards, no router-wide auth.
+app.use("/api/v1/payments", apiLimiter, paymentRoutes);
 
 // Admin router is role-gated. requireRole already rejects unauthenticated users,
 // so it's used alone (not stacked with requireAuth).
