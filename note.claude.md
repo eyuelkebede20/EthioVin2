@@ -49,8 +49,8 @@ iteration as a checkpoint on the branch so progress survives.
       - [x] iter C — auth-client, login/signup, AuthNav island, account + paywall checkout
       - [~] iter D — authed dashboards (split):
             - [x] D1 garage (AppShell + jobs/detail/customers/appointments/parts)
-            - [ ] D2 insurer (vehicle lookup view + claim/police intake)   ← NEXT
-            - [ ] D3 super_admin (analytics + onboarding: orgs/members/agreements)
+            - [x] D2 insurer (vehicle lookup health grade + claim/police minimized intake)
+            - [ ] D3 super_admin (analytics + onboarding: orgs/members/agreements)   ← NEXT
 - [ ] T12 — perf: raise pool size (indexes already in schema), SSG/ISR free decode
 - [ ] T13 — fix M1 conflict write-path (trust depends on it)
 - [ ] DB migration: run db:generate + apply (hand to user; do NOT db:push)
@@ -122,6 +122,9 @@ iteration as a checkpoint on the branch so progress survives.
   NotMember; garageApi helpers; pages jobs board + job detail (items/close/invoice/pay) + customers
   + appointments + parts. Committed a5fbaed. Still not installed. NEXT: D2 insurer dashboard.
   Next 15 client note: use useParams() hook in client pages (not the async params prop).
+- 2026-06-24 iter18: T4 D2 insurer dashboard — insurerApi (lookup/claim/police); pages: vehicle
+  lookup (health grade + factors + event summary, no PII), claim + police minimized intake forms.
+  403 surfaces backend message (not-a-member vs no-agreement). Committed 482cf6a. NEXT: D3 admin.
 
 ## Pending DB migration (hand to user; do NOT run db:push)
 Schema changed since M1 (all additive): all M2 tables (T1) + field_claims + garage_jobs.paid/paidAt.
@@ -133,16 +136,15 @@ Generate with `npm run db:generate` and apply via adjust.sql/generated migration
 - No DATABASE_URL guaranteed locally → I can typecheck but should NOT run db:push; will
   generate migration files only when safe, else hand off migration to user.
 
-## Next iteration — T4 iter D2 (insurer dashboard)
-In web/: app/insurer/* for insurer-org members (uses AppShell + INSURER_NAV). Add lib/api.ts
-insurerApi helpers: submitClaim(POST /api/v1/insurance/claims), submitPolice(POST
-/insurance/police-reports), lookupVehicle(GET /insurance/vehicles/:vin -> {vehicle, healthGrade,
-eventSummary}). Pages (client, session-gated, NotMember kind="insurer" on 403; note a 403 also fires
-if no active data-sharing agreement — show that message):
-  - app/insurer/page.tsx — vehicle lookup: VIN input -> health grade (A–F + factors) + event summary
-    counts (NO raw PII; that's the egress design).
-  - app/insurer/claims/page.tsx — minimized claim intake form (vin, incidentType, severityBand 1–5,
-    incidentDate?, payoutBand?). Make clear only the health signal is stored.
-  - app/insurer/police/page.tsx — police report intake (vin, incidentType, severityBand?, date?).
-Token-only. Still NO install. Then D3 super_admin (analytics dashboard from GET /admin/analytics +
-onboarding forms: create org, add member, create/revoke agreement). Loop RE-ARMED.
+## Next iteration — T4 iter D3 (super_admin dashboard)
+In web/: app/admin/* for super_admin (AppShell + ADMIN_NAV). Add lib/api.ts adminApi helpers:
+getAnalytics(GET /api/v1/admin/analytics), createOrg(POST /admin/orgs), addOrgMember(POST
+/admin/orgs/members), createAgreement(POST /admin/agreements), revokeAgreement(PATCH
+/admin/agreements/:id/revoke). Gate on session role === "super_admin" (show a notice otherwise).
+  - app/admin/page.tsx — analytics dashboard: stat cards (users, premium users, payments succeeded,
+    credits issued, flags open/resolved) + orgs-by-type + events-by-type tables.
+  - app/admin/orgs/page.tsx — create org form (name/type/country/city) + add-member form (orgId/email/
+    role). (No list endpoint for orgs yet — note that; could add GET /admin/orgs later.)
+  - app/admin/agreements/page.tsx — create agreement (orgId + scope JSON) + revoke by id.
+Token-only. Still NO install. After D3, frontend core done — remaining: T13 backend conflict
+write-path, T12 perf (pool), DB migration handoff, and a final wrap/QA pass. Loop RE-ARMED.
