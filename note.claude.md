@@ -47,8 +47,10 @@ iteration as a checkpoint on the branch so progress survives.
 - [~] T4 — Next.js pages (incremental):
       - [x] iter B — lib/api.ts, SiteHeader, VinSearch, landing page, SSR /decode/[vin]
       - [x] iter C — auth-client, login/signup, AuthNav island, account + paywall checkout
-      - [ ] iter D — authed dashboards (garage/insurer/admin) — large; split: D1 garage, D2 insurer,
-            D3 super_admin analytics + onboarding   ← NEXT (D1 garage)
+      - [~] iter D — authed dashboards (split):
+            - [x] D1 garage (AppShell + jobs/detail/customers/appointments/parts)
+            - [ ] D2 insurer (vehicle lookup view + claim/police intake)   ← NEXT
+            - [ ] D3 super_admin (analytics + onboarding: orgs/members/agreements)
 - [ ] T12 — perf: raise pool size (indexes already in schema), SSG/ISR free decode
 - [ ] T13 — fix M1 conflict write-path (trust depends on it)
 - [ ] DB migration: run db:generate + apply (hand to user; do NOT db:push)
@@ -116,6 +118,10 @@ iteration as a checkpoint on the branch so progress survives.
   (premium CTA -> /payments/init -> checkout + history). better-auth added to web deps. Committed
   a4f49bb. Still not installed. NEXT: iter D dashboards (split D1 garage / D2 insurer / D3 admin).
   Note: checkout.checkoutUrl is the STUB url (pay.stub.local) — won't load until real ETB provider.
+- 2026-06-24 iter17: T4 D1 garage dashboard — AppShell (session-gated sidebar, reusable), lib/navs,
+  NotMember; garageApi helpers; pages jobs board + job detail (items/close/invoice/pay) + customers
+  + appointments + parts. Committed a5fbaed. Still not installed. NEXT: D2 insurer dashboard.
+  Next 15 client note: use useParams() hook in client pages (not the async params prop).
 
 ## Pending DB migration (hand to user; do NOT run db:push)
 Schema changed since M1 (all additive): all M2 tables (T1) + field_claims + garage_jobs.paid/paidAt.
@@ -127,15 +133,16 @@ Generate with `npm run db:generate` and apply via adjust.sql/generated migration
 - No DATABASE_URL guaranteed locally → I can typecheck but should NOT run db:push; will
   generate migration files only when safe, else hand off migration to user.
 
-## Next iteration — T4 iter D1 (garage dashboard)
-In web/: app/garage/* authed dashboard for garage-org members. Add lib/api.ts helpers for garage
-endpoints (listJobs/createJob/getJob/updateJob/customers/appointments/parts/invoice/pay — all
-credentials-included client calls). Pages (client components, useSession-gated, redirect to /login
-if not authed; show a "not a garage member" notice if no garage org):
-  - app/garage/page.tsx — jobs board (list w/ status filter, create job modal, open/close jobs).
-  - app/garage/jobs/[id]/page.tsx — job detail (items editor, close-job, view invoice + mark paid).
-  - app/garage/customers, /appointments, /parts — simple list+create.
-Reuse design tokens + a shared components/AppShell (sidebar nav for garage sections). Keep it real
-but lean per section; the backend already enforces org scoping. Still NO install — author + review.
-Then D2 insurer (claim/police intake + vehicle lookup view), D3 super_admin (analytics + onboarding).
-Loop RE-ARMED.
+## Next iteration — T4 iter D2 (insurer dashboard)
+In web/: app/insurer/* for insurer-org members (uses AppShell + INSURER_NAV). Add lib/api.ts
+insurerApi helpers: submitClaim(POST /api/v1/insurance/claims), submitPolice(POST
+/insurance/police-reports), lookupVehicle(GET /insurance/vehicles/:vin -> {vehicle, healthGrade,
+eventSummary}). Pages (client, session-gated, NotMember kind="insurer" on 403; note a 403 also fires
+if no active data-sharing agreement — show that message):
+  - app/insurer/page.tsx — vehicle lookup: VIN input -> health grade (A–F + factors) + event summary
+    counts (NO raw PII; that's the egress design).
+  - app/insurer/claims/page.tsx — minimized claim intake form (vin, incidentType, severityBand 1–5,
+    incidentDate?, payoutBand?). Make clear only the health signal is stored.
+  - app/insurer/police/page.tsx — police report intake (vin, incidentType, severityBand?, date?).
+Token-only. Still NO install. Then D3 super_admin (analytics dashboard from GET /admin/analytics +
+onboarding forms: create org, add member, create/revoke agreement). Loop RE-ARMED.
