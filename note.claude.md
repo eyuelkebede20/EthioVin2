@@ -44,7 +44,10 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] T11 — admin onboarding (orgs/members/agreements) + analytics (adminController/Routes)
 === BACKEND M2 FEATURE-COMPLETE ===
 - [x] T3 — design tokens + Next.js web/ scaffold (globals.css tokens + tailwind.config + DESIGN.md)
-- [ ] T4 — Next.js pages: landing + public SSR decode + login + authed shell + paywall   ← NEXT (iter B)
+- [~] T4 — Next.js pages (incremental):
+      - [x] iter B — lib/api.ts, SiteHeader, VinSearch, landing page, SSR /decode/[vin]
+      - [ ] iter C — login/signup + authed shell + premium paywall checkout (/payments/init)   ← NEXT
+      - [ ] iter D — authed dashboards (garage/insurer/admin) — large; may split further
 - [ ] T12 — perf: raise pool size (indexes already in schema), SSG/ISR free decode
 - [ ] T13 — fix M1 conflict write-path (trust depends on it)
 - [ ] DB migration: run db:generate + apply (hand to user; do NOT db:push)
@@ -103,6 +106,10 @@ iteration as a checkpoint on the branch so progress survives.
   placeholder home, DESIGN.md, favicon, .env.example. Committed 39ce064.
   *** NOT typechecked/installed *** — user must `cd web && npm install` before `npm run dev`.
   Frontend files validated by review only (no Next toolchain in loop). NEXT: T4 landing+decode pages.
+- 2026-06-24 iter15: T4 iter B public funnel — lib/api.ts (typed DecodeView), SiteHeader, VinSearch
+  (client, keeps I/O/Q), real landing (hero/how-it-works/network/tiers), SSR app/decode/[vin] (free
+  view + paywall). Token-only. Committed 0892896. Still not installed. NEXT: login + authed shell.
+  Next 15 note: dynamic route params is a Promise — `const { vin } = await params`.
 
 ## Pending DB migration (hand to user; do NOT run db:push)
 Schema changed since M1 (all additive): all M2 tables (T1) + field_claims + garage_jobs.paid/paidAt.
@@ -114,17 +121,16 @@ Generate with `npm run db:generate` and apply via adjust.sql/generated migration
 - No DATABASE_URL guaranteed locally → I can typecheck but should NOT run db:push; will
   generate migration files only when safe, else hand off migration to user.
 
-## Next iteration — T4 iter B (landing + public decode)
-In web/: build the public funnel.
-  - lib/api.ts — tiny fetch wrapper around NEXT_PUBLIC_BACKEND_URL (server + client), typed
-    DecodeView (free|premium) mirroring backend services/decodeView.ts shapes.
-  - components/SiteHeader.tsx (logo + nav + Sign in), components/VinSearch.tsx (client: VIN input,
-    keeps I/O/Q, caps 17, routes to /decode/[vin]).
-  - app/page.tsx — REAL landing: hero ("what EthioVin does" from claude.second.md vision: free
-    basics + premium full history from garages/insurers/inspections; self-improving network), VIN
-    search CTA, "how it works" (decode→history→trust), tiers (free vs premium) section.
-  - app/decode/[vin]/page.tsx — SSR: server-fetch GET /api/v1/decode/:vin (free view), render
-    identity + basic spec teaser + "X history records — unlock with premium" paywall card. Reuse
-    a rebuilt VehicleSpecsCard styled on tokens. Shareable/crawlable (the SPA gap we fixed).
-Use ONLY design-system tokens/classes. Still no install — author + review. Iter C after: login +
-authed shell + paywall checkout (calls /payments/init). Loop RE-ARMED.
+## Next iteration — T4 iter C (auth + paywall checkout)
+better-auth client in web/ (npm i better-auth later; for now author lib/auth-client.ts using
+createAuthClient from "better-auth/react" pointing at NEXT_PUBLIC_BACKEND_URL; baseURL is the API).
+  - app/login/page.tsx — combined sign-in/sign-up (email+password min8), honors ?next= redirect,
+    on success router.push(next ?? "/account"). Uses authClient.signIn/signUp.email.
+  - components/SiteHeader: make it a client comp OR add an auth-aware variant showing the user/role
+    + sign out when a session exists (authClient.useSession). Keep server SiteHeader for public pages,
+    add components/AuthNav.tsx client island.
+  - app/account/page.tsx — client: show session, premium status, a "Get premium" button that calls
+    POST /api/v1/payments/init then opens checkout.checkoutUrl (stub), and "Decode full" entry.
+  - lib/api.ts: add postInitPayment(amount, provider) + getMe helpers.
+Token-only styling. Still no install (note better-auth + lucide already in deps? add better-auth to
+web/package.json deps). Then iter D dashboards. Loop RE-ARMED.
