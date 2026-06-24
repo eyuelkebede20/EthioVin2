@@ -209,10 +209,17 @@ export const updateGarageJobSchema = z.object({
   items: z.array(garageJobItemSchema).max(200).optional(),
 });
 
+export const APPOINTMENT_STATUSES = ["scheduled", "confirmed", "done", "cancelled"] as const;
+
 export const appointmentSchema = z.object({
   vin: vinInput.optional(),
   customerId: z.string().trim().max(80).optional(),
   scheduledAt: z.coerce.date(),
+});
+
+export const updateAppointmentSchema = z.object({
+  scheduledAt: z.coerce.date().optional(),
+  status: z.enum(APPOINTMENT_STATUSES).optional(),
 });
 
 export const partSchema = z.object({

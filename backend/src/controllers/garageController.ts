@@ -1,11 +1,11 @@
 import type { Request, Response } from "express";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
-import { customers, garage_jobs, garage_job_items, odometer_readings } from "../db/schema.ts";
+import { customers, garage_jobs, garage_job_items, odometer_readings, appointments } from "../db/schema.ts";
 import { parseVin } from "../utils/vin.ts";
 import { ingestVehicleEvent } from "../services/eventService.ts";
 import { AppError } from "../middleware/errorHandler.ts";
-import { customerSchema, createGarageJobSchema, updateGarageJobSchema, JOB_STATUSES } from "../utils/validation.ts";
+import { customerSchema, createGarageJobSchema, updateGarageJobSchema, appointmentSchema, updateAppointmentSchema, JOB_STATUSES, APPOINTMENT_STATUSES } from "../utils/validation.ts";
 
 // requireOrg("garage") guarantees both, but narrow for the type-checker.
 function ctx(req: Request): { userId: string; orgId: string } {
@@ -164,4 +164,55 @@ export const updateJob = async (req: Request, res: Response) => {
   const [job] = await db.select().from(garage_jobs).where(eq(garage_jobs.id, id)).limit(1);
   const items = await db.select().from(garage_job_items).where(eq(garage_job_items.jobId, id));
   return res.json({ ...job, items, closed: result.closed });
+};
+
+// ---------------------------------------------------------------------------
+// Appointments (scheduling) — scoped to the caller's org.
+// ---------------------------------------------------------------------------
+export const createAppointment = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const body = appointmentSchema.parse(req.body);
+
+  if (body.customerId) {
+    const [c] = await db.select({ id: customers.id }).from(customers).where(and(eq(customers.id, body.customerId), eq(customers.orgId, orgId))).limit(1);
+    if (!c) throw new AppError(404, "Customer not found");
+  }
+  const vin = body.vin ? parseVin(body.vin).keyVin : null;
+
+  const [row] = await db
+    .insert(appointments)
+    .values({ orgId, vin, customerId: body.customerId ?? null, scheduledAt: body.scheduledAt, status: "scheduled" })
+    .returning();
+  return res.status(201).json(row);
+};
+
+export const listAppointments = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const status = typeof req.query.status === "string" ? req.query.status : undefined;
+  if (status && !(APPOINTMENT_STATUSES as readonly string[]).includes(status)) throw new AppError(400, "Invalid status filter");
+
+  const conds = [eq(appointments.orgId, orgId)];
+  if (status) conds.push(eq(appointments.status, status));
+  const from = typeof req.query.from === "string" ? new Date(req.query.from) : null;
+  const to = typeof req.query.to === "string" ? new Date(req.query.to) : null;
+  if (from && !Number.isNaN(from.getTime())) conds.push(gte(appointments.scheduledAt, from));
+  if (to && !Number.isNaN(to.getTime())) conds.push(lte(appointments.scheduledAt, to));
+
+  const rows = await db.select().from(appointments).where(and(...conds)).orderBy(asc(appointments.scheduledAt));
+  return res.json(rows);
+};
+
+export const updateAppointment = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const id = String(req.params.id ?? "");
+  const body = updateAppointmentSchema.parse(req.body);
+  if (body.scheduledAt === undefined && body.status === undefined) throw new AppError(400, "No fields to update");
+
+  const set: { scheduledAt?: Date; status?: string } = {};
+  if (body.scheduledAt !== undefined) set.scheduledAt = body.scheduledAt;
+  if (body.status !== undefined) set.status = body.status;
+
+  const updated = await db.update(appointments).set(set).where(and(eq(appointments.id, id), eq(appointments.orgId, orgId))).returning();
+  if (!updated[0]) throw new AppError(404, "Appointment not found");
+  return res.json(updated[0]);
 };
