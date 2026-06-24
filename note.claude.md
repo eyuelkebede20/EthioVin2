@@ -39,9 +39,9 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] decode endpoints: /api/v1/decode/:vin (public free) + /:vin/full (premium) + audit
 - [x] event ingestion spine: services/eventService.ts (ingestVehicleEvent + recordVehicleEvent)
 - [x] T9 — garage (FULL) COMPLETE: T9a core+job-close-emit, T9b appointments, T9c parts, T9d invoicing.
-- [ ] T10 — insurance reciprocal exchange (both minimization gates)   ← NEXT
-- [ ] T8 — payments provider integration (ETB)
-- [ ] T11 — admin analytics + org onboarding
+- [x] T10 — insurance reciprocal exchange (insuranceController + healthGrade; both gates minimized)
+- [ ] T8 — payments provider integration (ETB)   ← NEXT
+- [ ] T11 — admin analytics + org onboarding (org create + member add + data_sharing_agreement accept)
 - [ ] T3 — design system tokens (frontend)
 - [ ] T4 — Next.js shell + public/authed routing + SSR decode + login + paywall
 - [ ] T12 — perf: pool size, indexes (mostly in schema), SSG/ISR
@@ -81,7 +81,12 @@ iteration as a checkpoint on the branch so progress survives.
 - 2026-06-24 iter9: T9c parts inventory (create/list ?lowStock/patch w/ atomic qtyDelta). Scoped
   req.org.id. updatePartSchema added. Typecheck clean; committed 5e26541.
 - 2026-06-24 iter10: T9d invoicing (garage_jobs.paid/paidAt additive; GET /jobs/:id/invoice derive,
-  PATCH /jobs/:id/pay). FULL GARAGE COMPLETE. Typecheck clean; committed fd5e1d6. NEXT: T10 insurance.
+  PATCH /jobs/:id/pay). FULL GARAGE COMPLETE. Typecheck clean; committed fd5e1d6.
+- 2026-06-24 iter11: T10 insurance exchange (insuranceController + insuranceRoutes mounted
+  /api/v1/insurance gated requireOrg("insurer") + assertAgreement; healthGrade.ts pure helper;
+  resolveVehicle exported from decodeController). Intake minimized (only health signal stored),
+  egress = identity+grade+event-summary (no PII), barter exchange debit, audited. Typecheck clean;
+  committed d3bf93b. NEXT: T8 payments.
 
 ## Pending DB migration (hand to user; do NOT run db:push)
 Schema changed since M1 (all additive): all M2 tables (T1) + field_claims + garage_jobs.paid/paidAt.
@@ -94,19 +99,16 @@ Generate with `npm run db:generate` and apply via adjust.sql/generated migration
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-T10 — insurance reciprocal exchange (§3b). New insuranceController + insuranceRoutes, mounted
-/api/v1/insurance, gated requireOrg("insurer"). Require an active data_sharing_agreement for the
-org (helper: assertAgreement(orgId) -> 403 if none active). Endpoints:
-  - POST /claims (insuranceClaimIntakeSchema) — INTAKE MINIMIZATION GATE: Zod already strips extra
-    fields; insert ONLY {orgId, vin(canonical), incidentType, severityBand, incidentDate?, payoutBand?}
-    into insurance_claims. Also emit a vehicle_event(type insurance_claim) via ingestVehicleEvent
-    (recordedBy req.user.id, orgId) so it credits the insurer + lands in history. writeAudit.
-  - POST /police-reports (policeReportIntakeSchema) — same pattern -> police_reports + event + audit.
-  - GET /vehicles/:vin — EGRESS: the "insurer view" = decoded identity + HEALTH GRADE + event SUMMARY
-    (NO garage customer PII, NO other insurers' raw rows). Reuse decodeController.resolveVehicle for
-    identity; compute a simple health grade from events (claims severity + odometer flags + accident
-    count). writeAudit on read. Spend a credit (barter) via creditService.recordCredit(reason
-    "exchange", negative) — but keep it best-effort/flagged by CREDIT_REDEMPTION_MODE neutral (just
-    record the exchange debit). Add data_sharing_agreement create/accept under admin/onboarding later (T11).
-  Need: assertAgreement helper, a healthGrade(events) helper (put in services/healthGrade.ts).
-  All scoped req.org.id. Loop RE-ARMED.
+T8 — payments (ETB). services/paymentService.ts + paymentController + paymentRoutes mounted
+/api/v1/payments (requireAuth). Provider-agnostic skeleton (Telebirr/Chapa/Santimpay later):
+  - POST /payments/init (paymentInitSchema {amount, provider}) — create a payments row status
+    "pending" with a generated providerRef + idempotencyKey; return a checkout stub (no real
+    provider call yet — env keys unknown). recordedBy req.user.id.
+  - POST /payments/webhook — PUBLIC (mount OUTSIDE requireAuth like /decode): verify a signature
+    placeholder, look up by providerRef, IDEMPOTENT via payments.idempotencyKey/status (a duplicate
+    webhook must grant premium exactly ONCE): if status pending -> set succeeded AND grant
+    premium_access (tier premium, expiresAt +30d) in one tx; if already succeeded -> no-op 200.
+  - GET /payments/me — caller's payment history.
+  Keep provider calls behind a clearly-stubbed adapter so real keys slot in later. Then T11 admin
+  onboarding (org create + member add + data_sharing_agreement accept) so insurer/garage flows are
+  reachable. Then frontend T3/T4. Loop RE-ARMED.
