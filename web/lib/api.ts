@@ -90,3 +90,79 @@ export interface PaymentRow {
 export function getMyPayments(): Promise<PaymentRow[]> {
   return api<PaymentRow[]>("/api/v1/payments/me", { cache: "no-store" } as RequestInit);
 }
+
+// --- Garage management (org-scoped server-side; client just calls with cookie) ---
+
+export type JobStatus = "intake" | "in_progress" | "awaiting_parts" | "done" | "delivered" | "cancelled";
+export const JOB_STATUSES: JobStatus[] = ["intake", "in_progress", "awaiting_parts", "done", "delivered", "cancelled"];
+
+export interface JobItem {
+  id?: string;
+  kind: "labor" | "part";
+  description: string;
+  qty: number | string;
+  unitCost: number | string;
+}
+export interface Job {
+  id: string;
+  vin: string | null;
+  customerId: string | null;
+  status: JobStatus;
+  odometerIn: number | null;
+  totalCost: string;
+  openedAt: string;
+  closedAt: string | null;
+  paid: boolean;
+  paidAt: string | null;
+  items?: JobItem[];
+  closed?: boolean;
+}
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string | null;
+  createdAt: string;
+}
+export interface Appointment {
+  id: string;
+  vin: string | null;
+  customerId: string | null;
+  scheduledAt: string;
+  status: string;
+}
+export interface Part {
+  id: string;
+  name: string;
+  sku: string | null;
+  qtyOnHand: number;
+  reorderLevel: number;
+  unitCost: string;
+}
+export interface Invoice {
+  invoiceNumber: string;
+  job: { id: string; vin: string | null; status: string; openedAt: string; closedAt: string | null };
+  customer: { name: string; phone: string | null } | null;
+  lines: Array<JobItem & { lineTotal: number }>;
+  subtotal: number;
+  total: number;
+  paid: boolean;
+  paidAt: string | null;
+}
+
+const noStore = { cache: "no-store" } as RequestInit;
+
+export const garageApi = {
+  listJobs: (status?: string) => api<Job[]>(`/api/v1/garage/jobs${status ? `?status=${status}` : ""}`, noStore),
+  getJob: (id: string) => api<Job>(`/api/v1/garage/jobs/${id}`, noStore),
+  createJob: (body: { vin?: string; customerId?: string; odometerIn?: number; items?: JobItem[] }) => api<Job>("/api/v1/garage/jobs", { method: "POST", body: JSON.stringify(body) }),
+  updateJob: (id: string, body: { status?: JobStatus; odometerIn?: number; items?: JobItem[] }) => api<Job>(`/api/v1/garage/jobs/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  getInvoice: (id: string) => api<Invoice>(`/api/v1/garage/jobs/${id}/invoice`, noStore),
+  payInvoice: (id: string) => api<{ id: string; paid: boolean; paidAt: string }>(`/api/v1/garage/jobs/${id}/pay`, { method: "PATCH" }),
+  listCustomers: () => api<Customer[]>("/api/v1/garage/customers", noStore),
+  createCustomer: (body: { name: string; phone?: string }) => api<Customer>("/api/v1/garage/customers", { method: "POST", body: JSON.stringify(body) }),
+  listAppointments: (status?: string) => api<Appointment[]>(`/api/v1/garage/appointments${status ? `?status=${status}` : ""}`, noStore),
+  createAppointment: (body: { vin?: string; customerId?: string; scheduledAt: string }) => api<Appointment>("/api/v1/garage/appointments", { method: "POST", body: JSON.stringify(body) }),
+  listParts: (lowStock?: boolean) => api<Part[]>(`/api/v1/garage/parts${lowStock ? "?lowStock=true" : ""}`, noStore),
+  createPart: (body: { name: string; sku?: string; qtyOnHand?: number; reorderLevel?: number; unitCost?: number }) => api<Part>("/api/v1/garage/parts", { method: "POST", body: JSON.stringify(body) }),
+  updatePart: (id: string, body: { qtyDelta?: number; qtyOnHand?: number; reorderLevel?: number; unitCost?: number }) => api<Part>(`/api/v1/garage/parts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+};
