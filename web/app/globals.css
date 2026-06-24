@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   EthioVin — Pure Design System tokens (single source of truth).
+   Colors are RGB channel triplets so Tailwind can apply <alpha-value>.
+   See web/DESIGN.md for the rationale and usage.
+   ========================================================================== */
+:root {
+  /* Brand — warm orange (primary) */
+  --brand-50: 255 247 237;
+  --brand-100: 255 237 213;
+  --brand-200: 254 215 170;
+  --brand-300: 253 186 116;
+  --brand-400: 251 146 60;
+  --brand-500: 249 115 22; /* primary action */
+  --brand-600: 234 88 12; /* primary hover */
+  --brand-700: 194 65 12;
+  --brand-800: 154 52 18;
+  --brand-900: 124 45 18;
+
+  /* Accent — amber (secondary highlight) */
+  --accent-400: 251 191 36;
+  --accent-500: 245 158 11;
+  --accent-600: 217 119 6;
+
+  /* Surfaces & text (slate-based neutrals) */
+  --bg: 255 255 255;
+  --surface: 248 250 252; /* page background */
+  --surface-2: 241 245 249;
+  --border: 226 232 240;
+  --fg: 15 23 42; /* primary text */
+  --fg-muted: 100 116 139; /* secondary text */
+
+  /* Semantic */
+  --success: 22 163 74;
+  --warning: 217 119 6;
+  --error: 220 38 38;
+  --info: 2 132 199;
+
+  /* Radius scale */
+  --radius-sm: 0.375rem;
+  --radius: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
+  --shadow: 0 4px 16px rgb(15 23 42 / 0.08);
+  --shadow-lg: 0 12px 32px rgb(15 23 42 / 0.12);
+  --shadow-brand: 0 8px 24px rgb(249 115 22 / 0.28);
+
+  /* Motion */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 150ms;
+  --dur: 250ms;
+  --dur-slow: 400ms;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background-color: rgb(var(--surface));
+    color: rgb(var(--fg));
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Brand focus ring for keyboard users (accessibility token). */
+  :focus-visible {
+    outline: 2px solid rgb(var(--brand-500));
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Reusable brand primitives so screens stay on-system. */
+  .btn-brand {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-5 py-2.5 font-semibold text-white shadow-brand transition-colors duration-fast hover:bg-brand-600 disabled:opacity-60;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border px-5 py-2.5 font-semibold text-fg transition-colors duration-fast hover:bg-surface-2;
+  }
+  .card {
+    @apply rounded-xl border border-border bg-bg shadow;
+  }
+}
