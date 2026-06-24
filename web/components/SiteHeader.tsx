@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AuthNav from "./AuthNav";
 
 export default function SiteHeader() {
   return (
@@ -15,9 +16,7 @@ export default function SiteHeader() {
           <Link href="/#pricing" className="hidden text-body text-fg-muted transition-colors hover:text-fg sm:inline">
             Pricing
           </Link>
-          <Link href="/login" className="btn-brand !px-4 !py-2">
-            Sign in
-          </Link>
+          <AuthNav />
         </nav>
       </div>
     </header>

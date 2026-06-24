@@ -64,3 +64,29 @@ export type DecodeView = FreeDecodeView | PremiumDecodeView;
 export function fetchFreeDecode(vin: string): Promise<FreeDecodeView> {
   return api<FreeDecodeView>(`/api/v1/decode/${encodeURIComponent(vin)}`, { next: { revalidate: 3600 } } as RequestInit);
 }
+
+// --- Payments ----------------------------------------------------------------
+
+export interface InitPaymentResp {
+  paymentId: string;
+  providerRef: string;
+  status: string;
+  checkout: { checkoutUrl: string; stub: boolean };
+}
+
+export function postInitPayment(amount: number, provider: string): Promise<InitPaymentResp> {
+  return api<InitPaymentResp>("/api/v1/payments/init", { method: "POST", body: JSON.stringify({ amount, provider }) });
+}
+
+export interface PaymentRow {
+  id: string;
+  amount: string;
+  currency: string;
+  provider: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export function getMyPayments(): Promise<PaymentRow[]> {
+  return api<PaymentRow[]>("/api/v1/payments/me", { cache: "no-store" } as RequestInit);
+}
