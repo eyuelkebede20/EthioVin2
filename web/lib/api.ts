@@ -189,3 +189,33 @@ export const insurerApi = {
   submitPolice: (body: { vin: string; incidentType: string; severityBand?: number; incidentDate?: string; reportRef?: string }) =>
     api<{ ok: boolean; reportId: string }>("/api/v1/insurance/police-reports", { method: "POST", body: JSON.stringify(body) }),
 };
+
+// --- Super-admin: analytics + onboarding -------------------------------------
+
+export interface Analytics {
+  users: number;
+  orgsByType: Array<{ type: string; count: number }>;
+  eventsByType: Array<{ type: string; count: number }>;
+  creditsIssued: number;
+  flagsOpen: number;
+  flagsResolved: number;
+  premiumUsers: number;
+  paymentsSucceeded: number;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  type: string;
+  country: string | null;
+  city: string | null;
+  status: string;
+}
+
+export const adminApi = {
+  getAnalytics: () => api<Analytics>("/api/v1/admin/analytics", { cache: "no-store" } as RequestInit),
+  createOrg: (body: { name: string; type: string; country?: string; city?: string }) => api<Organization>("/api/v1/admin/orgs", { method: "POST", body: JSON.stringify(body) }),
+  addOrgMember: (body: { orgId: string; email: string; orgRole?: string }) => api<{ id: string }>("/api/v1/admin/orgs/members", { method: "POST", body: JSON.stringify(body) }),
+  createAgreement: (body: { orgId: string; scope: Record<string, unknown> }) => api<{ id: string }>("/api/v1/admin/agreements", { method: "POST", body: JSON.stringify(body) }),
+  revokeAgreement: (id: string) => api<{ success: boolean }>(`/api/v1/admin/agreements/${id}/revoke`, { method: "PATCH" }),
+};

@@ -13,7 +13,7 @@ export interface NavItem {
 
 // Authed layout with a sidebar. Session-gated: redirects to /login if signed out.
 // Generic so garage / insurer / admin dashboards reuse it with their own nav.
-export default function AppShell({ title, nav, children }: { title: string; nav: NavItem[]; children: React.ReactNode }) {
+export default function AppShell({ title, nav, requireRole, children }: { title: string; nav: NavItem[]; requireRole?: string; children: React.ReactNode }) {
   const { data: session, isPending } = useSession();
   const router = useRouter();
   const pathname = usePathname();
@@ -23,6 +23,9 @@ export default function AppShell({ title, nav, children }: { title: string; nav:
   }, [isPending, session, router, pathname]);
 
   if (isPending || !session) return <main className="p-16 text-center text-body text-fg-muted">Loading…</main>;
+
+  const role = (session.user as { role?: string }).role;
+  const roleOk = !requireRole || role === requireRole;
 
   const isActive = (href: string) => pathname === href || (href === "/garage" ? pathname.startsWith("/garage/jobs") : pathname.startsWith(`${href}/`));
 
@@ -52,7 +55,16 @@ export default function AppShell({ title, nav, children }: { title: string; nav:
             ))}
           </nav>
         </aside>
-        <main className="min-w-0">{children}</main>
+        <main className="min-w-0">
+          {roleOk ? (
+            children
+          ) : (
+            <div className="card p-10 text-center">
+              <h2 className="text-title text-fg">Restricted</h2>
+              <p className="mx-auto mt-2 max-w-md text-body text-fg-muted">This area requires the {requireRole} role.</p>
+            </div>
+          )}
+        </main>
       </div>
     </div>
   );
