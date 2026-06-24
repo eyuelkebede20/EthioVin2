@@ -39,9 +39,8 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] decode endpoints: /api/v1/decode/:vin (public free) + /:vin/full (premium) + audit
 - [x] event ingestion spine: services/eventService.ts (ingestVehicleEvent + recordVehicleEvent)
 - [ ] T9 — garage (FULL). Sub-iters, all scoped requireOrg("garage"):
-      - [ ] T9a — customers CRUD + jobs (create/list/get/update) + job items + cost totals +
-            job close → ingestVehicleEvent (maintenance/repair) + odometer reading + credit   ← NEXT
-      - [ ] T9b — appointments (create/list/update/cancel)
+      - [x] T9a — customers + jobs + items + totals + job-close event emit + odometer (garageController)
+      - [ ] T9b — appointments (create/list/update/cancel)   ← NEXT
       - [ ] T9c — parts inventory (CRUD + qtyOnHand/reorderLevel + low-stock list)
       - [ ] T9d — invoicing/receipt totals (derive from job items; mark paid)
 - [ ] T10 — insurance reciprocal exchange (both minimization gates)
@@ -76,7 +75,11 @@ iteration as a checkpoint on the branch so progress survives.
   order. Typecheck clean; committed a7d4b57.
 - 2026-06-23 iter6: eventService spine (ingestVehicleEvent + recordVehicleEvent) — idempotent event
   insert + trust-weighted credit + per-field corroboration in one tx; reads score via tx (pool-safe).
-  Typecheck clean; committed 5311e9c. LOOP PAUSED at T9 — asking user garage-management depth.
+  Typecheck clean; committed 5311e9c. Garage depth confirmed FULL; committed decision.
+- 2026-06-24 iter7: T9a garage core (garageController + garageRoutes, mounted /api/v1/garage gated
+  requireOrg("garage")). customers + jobs + items + totals; job close emits event + odometer
+  (rollback-flagged) idempotently. All queries scoped req.org.id. Typecheck clean; committed bed1c25.
+  NEXT: T9b appointments.
 
 ## Gotchas / learnings
 - crypto.randomUUID() is available globally (Node 22) — used by vehicle_ledger already.
@@ -85,14 +88,12 @@ iteration as a checkpoint on the branch so progress survives.
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-T9a — garageController + garageRoutes (mounted /api/v1/garage, gated requireOrg("garage")):
-  - customers: POST create, GET list (scoped req.org.id)
-  - jobs: POST create (+ optional items), GET list (filter by status), GET :id (with items),
-    PATCH :id (status/odometer/items + recompute totalCost from items)
-  - job close (status -> done/delivered): inside a tx, recompute total, then
-    ingestVehicleEvent({ vin, eventType:"maintenance"|"repair", recordedBy:req.user.id,
-    orgId:req.org.id, sourceType:"garage", payload:{items,total}, occurredAt:closedAt,
-    fields:[{field:"odometer",value:odometerIn}] }) AND insert an odometer_readings row
-    (flag if lower than the latest existing reading for that vin).
-  Use Zod: customerSchema, createGarageJobSchema, updateGarageJobSchema (already in validation.ts).
-  ALL queries scoped by req.org.id (the IDOR boundary). Then T9b appointments. Loop RE-ARMED.
+T9b — appointments in garageController + garageRoutes (same /api/v1/garage mount, already gated
+requireOrg("garage")):
+  - POST /appointments (appointmentSchema {vin?, customerId?, scheduledAt}) — verify customerId
+    belongs to org; canonicalize vin via parseVin if given; insert appointments {orgId, ...}.
+  - GET /appointments?from=&to=&status= — scoped req.org.id, ordered by scheduledAt.
+  - PATCH /appointments/:id — update status (scheduled/confirmed/done/cancelled) + reschedule
+    (scheduledAt). Scope by org; 404 if not owned.
+  appointments.status is a plain varchar default "scheduled" — accept a small status enum in code.
+  Then T9c parts inventory. Loop RE-ARMED.
