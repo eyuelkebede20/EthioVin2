@@ -41,11 +41,13 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] T9 — garage (FULL) COMPLETE: T9a core+job-close-emit, T9b appointments, T9c parts, T9d invoicing.
 - [x] T10 — insurance reciprocal exchange (insuranceController + healthGrade; both gates minimized)
 - [x] T8 — payments (ETB) idempotent webhook -> premium (paymentService/Controller/Routes)
-- [ ] T11 — admin analytics + org onboarding (org create + member add + data_sharing_agreement accept)  ← NEXT
-- [ ] T3 — design system tokens (frontend)
+- [x] T11 — admin onboarding (orgs/members/agreements) + analytics (adminController/Routes)
+=== BACKEND M2 FEATURE-COMPLETE ===
+- [ ] T3 — design system tokens (frontend)   ← NEXT (start Next.js scaffold)
 - [ ] T4 — Next.js shell + public/authed routing + SSR decode + login + paywall
-- [ ] T12 — perf: pool size, indexes (mostly in schema), SSG/ISR
+- [ ] T12 — perf: raise pool size (indexes already in schema), SSG/ISR free decode
 - [ ] T13 — fix M1 conflict write-path (trust depends on it)
+- [ ] DB migration: run db:generate + apply (hand to user; do NOT db:push)
 
 ## Open decisions
 - [x] Trust penalty curve: CONFIRMED 2026-06-23 "Forgiving start" (2/3/−10, no escalation, floor 0)
@@ -89,10 +91,13 @@ iteration as a checkpoint on the branch so progress survives.
   committed d3bf93b.
 - 2026-06-24 iter12: T8 payments (paymentService stub adapter + paymentController + paymentRoutes
   /api/v1/payments). /init requireAuth; /webhook PUBLIC + idempotent (advisory lock + status guard)
-  grants premium_access +30d once; /me history. Typecheck clean; committed a75f3c6. NEXT: T11 admin.
+  grants premium_access +30d once; /me history. Typecheck clean; committed a75f3c6.
   Note: premium_access inserts a new active row per payment (no unique userId) — requireTier just
-  needs one active row; dedupe later if needed. Webhook is behind apiLimiter — may need higher cap
-  for real provider bursts.
+  needs one active row; dedupe later if needed. Webhook is behind apiLimiter — may need higher cap.
+- 2026-06-24 iter13: T11 admin onboarding (POST /admin/orgs, /orgs/members, /agreements; PATCH
+  /agreements/:id/revoke) + GET /admin/analytics. Typecheck clean; committed 547754b.
+  *** BACKEND M2 FEATURE-COMPLETE *** (decode/garage/insurance/payments/admin all done).
+  NEXT: frontend — Next.js scaffold + design tokens (T3/T4), built incrementally.
 
 ## Pending DB migration (hand to user; do NOT run db:push)
 Schema changed since M1 (all additive): all M2 tables (T1) + field_claims + garage_jobs.paid/paidAt.
@@ -104,16 +109,15 @@ Generate with `npm run db:generate` and apply via adjust.sql/generated migration
 - No DATABASE_URL guaranteed locally → I can typecheck but should NOT run db:push; will
   generate migration files only when safe, else hand off migration to user.
 
-## Next iteration
-T11 — admin onboarding + analytics. Extend adminController + adminRoutes (router already gated
-requireRole("super_admin","garage_admin") at mount; keep individual routes super_admin):
-  - POST /admin/orgs (createOrgSchema) — create an organization (garage/insurer/diagnostic).
-  - POST /admin/orgs/members (addOrgMemberSchema {orgId, email, orgRole?}) — look up user by email,
-    insert organization_members. 404 if user/org missing.
-  - POST /admin/agreements (dataSharingAgreementSchema {orgId, scope}) — create an active
-    data_sharing_agreement (acceptedBy = req.user.id). This is what unlocks the insurer exchange.
-  - DELETE/PATCH /admin/agreements/:id — revoke (status revoked, revokedAt now).
-  - GET /admin/analytics — counts: users, orgs by type, vehicle_events by type, credits issued,
-    flags open/resolved, premium users, payments succeeded. (super_admin dashboards.)
-  Validate org exists for member/agreement adds. Then frontend: T3 design tokens, T4 Next.js shell.
-  Loop RE-ARMED.
+## Next iteration — FRONTEND starts (incremental Next.js re-platform)
+Scaffold a NEW Next.js app in `web/` (keep `client/` during cutover; deploy web/ to Vercel later).
+Iter A (T3 design tokens + skeleton): create web/package.json (next 15, react 19, tailwind), 
+  next.config, tsconfig, postcss/tailwind config with a PURE DESIGN SYSTEM token layer (CSS vars
+  in globals.css: colors warm orange/amber to match brand, type scale, spacing, radius, shadow,
+  motion), app/layout.tsx, a tokens doc. Do NOT npm install (no network assumed) — just author files;
+  note that `cd web && npm install` is needed before dev. Keep VITE→NEXT env: NEXT_PUBLIC_BACKEND_URL.
+Iter B (T4): landing page (what EthioVin does, from claude.second.md vision) + public SSR decode
+  page calling GET /api/v1/decode/:vin. Iter C: login + authed shell + premium paywall.
+Reuse logic from client/src components where helpful (VehicleSpecsCard etc.) but rebuild as RSC/Tailwind.
+Note: I can't run `next dev` reliably (no install) — focus on correct source files + typecheck-by-eye;
+flag that the user runs `cd web && npm install && npm run dev`. Loop RE-ARMED.
