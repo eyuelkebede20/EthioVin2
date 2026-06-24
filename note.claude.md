@@ -40,8 +40,8 @@ iteration as a checkpoint on the branch so progress survives.
 - [x] event ingestion spine: services/eventService.ts (ingestVehicleEvent + recordVehicleEvent)
 - [x] T9 — garage (FULL) COMPLETE: T9a core+job-close-emit, T9b appointments, T9c parts, T9d invoicing.
 - [x] T10 — insurance reciprocal exchange (insuranceController + healthGrade; both gates minimized)
-- [ ] T8 — payments provider integration (ETB)   ← NEXT
-- [ ] T11 — admin analytics + org onboarding (org create + member add + data_sharing_agreement accept)
+- [x] T8 — payments (ETB) idempotent webhook -> premium (paymentService/Controller/Routes)
+- [ ] T11 — admin analytics + org onboarding (org create + member add + data_sharing_agreement accept)  ← NEXT
 - [ ] T3 — design system tokens (frontend)
 - [ ] T4 — Next.js shell + public/authed routing + SSR decode + login + paywall
 - [ ] T12 — perf: pool size, indexes (mostly in schema), SSG/ISR
@@ -86,7 +86,13 @@ iteration as a checkpoint on the branch so progress survives.
   /api/v1/insurance gated requireOrg("insurer") + assertAgreement; healthGrade.ts pure helper;
   resolveVehicle exported from decodeController). Intake minimized (only health signal stored),
   egress = identity+grade+event-summary (no PII), barter exchange debit, audited. Typecheck clean;
-  committed d3bf93b. NEXT: T8 payments.
+  committed d3bf93b.
+- 2026-06-24 iter12: T8 payments (paymentService stub adapter + paymentController + paymentRoutes
+  /api/v1/payments). /init requireAuth; /webhook PUBLIC + idempotent (advisory lock + status guard)
+  grants premium_access +30d once; /me history. Typecheck clean; committed a75f3c6. NEXT: T11 admin.
+  Note: premium_access inserts a new active row per payment (no unique userId) — requireTier just
+  needs one active row; dedupe later if needed. Webhook is behind apiLimiter — may need higher cap
+  for real provider bursts.
 
 ## Pending DB migration (hand to user; do NOT run db:push)
 Schema changed since M1 (all additive): all M2 tables (T1) + field_claims + garage_jobs.paid/paidAt.
@@ -99,16 +105,15 @@ Generate with `npm run db:generate` and apply via adjust.sql/generated migration
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-T8 — payments (ETB). services/paymentService.ts + paymentController + paymentRoutes mounted
-/api/v1/payments (requireAuth). Provider-agnostic skeleton (Telebirr/Chapa/Santimpay later):
-  - POST /payments/init (paymentInitSchema {amount, provider}) — create a payments row status
-    "pending" with a generated providerRef + idempotencyKey; return a checkout stub (no real
-    provider call yet — env keys unknown). recordedBy req.user.id.
-  - POST /payments/webhook — PUBLIC (mount OUTSIDE requireAuth like /decode): verify a signature
-    placeholder, look up by providerRef, IDEMPOTENT via payments.idempotencyKey/status (a duplicate
-    webhook must grant premium exactly ONCE): if status pending -> set succeeded AND grant
-    premium_access (tier premium, expiresAt +30d) in one tx; if already succeeded -> no-op 200.
-  - GET /payments/me — caller's payment history.
-  Keep provider calls behind a clearly-stubbed adapter so real keys slot in later. Then T11 admin
-  onboarding (org create + member add + data_sharing_agreement accept) so insurer/garage flows are
-  reachable. Then frontend T3/T4. Loop RE-ARMED.
+T11 — admin onboarding + analytics. Extend adminController + adminRoutes (router already gated
+requireRole("super_admin","garage_admin") at mount; keep individual routes super_admin):
+  - POST /admin/orgs (createOrgSchema) — create an organization (garage/insurer/diagnostic).
+  - POST /admin/orgs/members (addOrgMemberSchema {orgId, email, orgRole?}) — look up user by email,
+    insert organization_members. 404 if user/org missing.
+  - POST /admin/agreements (dataSharingAgreementSchema {orgId, scope}) — create an active
+    data_sharing_agreement (acceptedBy = req.user.id). This is what unlocks the insurer exchange.
+  - DELETE/PATCH /admin/agreements/:id — revoke (status revoked, revokedAt now).
+  - GET /admin/analytics — counts: users, orgs by type, vehicle_events by type, credits issued,
+    flags open/resolved, premium users, payments succeeded. (super_admin dashboards.)
+  Validate org exists for member/agreement adds. Then frontend: T3 design tokens, T4 Next.js shell.
+  Loop RE-ARMED.
