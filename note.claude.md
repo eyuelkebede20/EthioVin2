@@ -41,8 +41,8 @@ iteration as a checkpoint on the branch so progress survives.
 - [ ] T9 — garage (FULL). Sub-iters, all scoped requireOrg("garage"):
       - [x] T9a — customers + jobs + items + totals + job-close event emit + odometer (garageController)
       - [x] T9b — appointments (create/list w/ status+date filters/reschedule+status)
-      - [ ] T9c — parts inventory (CRUD + qtyOnHand/reorderLevel + low-stock list)   ← NEXT
-      - [ ] T9d — invoicing/receipt totals (derive from job items; mark paid)
+      - [x] T9c — parts inventory (create/list w/ lowStock/patch w/ qtyDelta)
+      - [ ] T9d — invoicing/receipt totals (derive from job items; mark paid)   ← NEXT
 - [ ] T10 — insurance reciprocal exchange (both minimization gates)
 - [ ] T8 — payments provider integration (ETB)
 - [ ] T11 — admin analytics + org onboarding
@@ -80,8 +80,10 @@ iteration as a checkpoint on the branch so progress survives.
   requireOrg("garage")). customers + jobs + items + totals; job close emits event + odometer
   (rollback-flagged) idempotently. All queries scoped req.org.id. Typecheck clean; committed bed1c25.
 - 2026-06-24 iter8: T9b appointments (create/list w/ status+date filters/reschedule). Scoped
-  req.org.id. updateAppointmentSchema added. Typecheck clean; committed a334413. NEXT: T9c parts.
-  Note: PowerShell classifier was briefly unavailable — ran typecheck via Bash tool instead (works).
+  req.org.id. updateAppointmentSchema added. Typecheck clean; committed a334413.
+  Note: classifier (PowerShell AND Bash) intermittently unavailable — retry the command, it clears.
+- 2026-06-24 iter9: T9c parts inventory (create/list ?lowStock/patch w/ atomic qtyDelta). Scoped
+  req.org.id. updatePartSchema added. Typecheck clean; committed 5e26541. NEXT: T9d invoicing.
 
 ## Gotchas / learnings
 - crypto.randomUUID() is available globally (Node 22) — used by vehicle_ledger already.
@@ -90,10 +92,13 @@ iteration as a checkpoint on the branch so progress survives.
   generate migration files only when safe, else hand off migration to user.
 
 ## Next iteration
-T9c — parts inventory in garageController + garageRoutes (same /api/v1/garage mount):
-  - POST /parts (partSchema {name, sku?, qtyOnHand, reorderLevel, unitCost}) — insert {orgId,...}.
-  - GET /parts?lowStock=true — scoped req.org.id; lowStock filters qtyOnHand <= reorderLevel.
-  - PATCH /parts/:id — update fields incl. qtyOnHand adjust (scoped org, 404 if not owned).
-  Add updatePartSchema to validation.ts (all fields optional + optional qtyDelta to inc/dec stock).
-  Then T9d invoicing. Loop RE-ARMED. (If PowerShell classifier flaky, typecheck via Bash:
-  `cd /d/Apps/Learning/ethiovinv2/backend && npm run typecheck`.)
+T9d — invoicing/receipt for a job (closes out the full garage feature). In garageController:
+  - GET /jobs/:id/invoice — scoped org; returns a derived invoice: job + items (with line totals
+    qty*unitCost) + subtotal (= job.totalCost) + a generated invoice number (e.g. INV-<short id>)
+    + the customer (name/phone) + paid status. Pure read/derive (no new heavy tables); add a
+    `paid` boolean + `paidAt` to garage_jobs via schema (additive) OR track via job status.
+    DECISION (no user needed): add `paid` boolean default false + `paidAt` timestamp to garage_jobs
+    (additive migration) so an invoice can be marked paid.
+  - PATCH /jobs/:id/pay — mark paid (set paid=true, paidAt=now), scoped org, 404 if not owned.
+  Update schema.ts garage_jobs (+ typecheck). Then T10 insurance reciprocal exchange (§3b).
+  Loop RE-ARMED. (Classifier intermittently down — just retry the typecheck command.)
