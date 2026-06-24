@@ -50,7 +50,8 @@ iteration as a checkpoint on the branch so progress survives.
       - [~] iter D — authed dashboards (split):
             - [x] D1 garage (AppShell + jobs/detail/customers/appointments/parts)
             - [x] D2 insurer (vehicle lookup health grade + claim/police minimized intake)
-            - [ ] D3 super_admin (analytics + onboarding: orgs/members/agreements)   ← NEXT
+            - [x] D3 super_admin (analytics + onboarding: orgs/members/agreements)
+=== FRONTEND CORE COMPLETE (funnel + auth/paywall + garage/insurer/admin dashboards) ===
 - [ ] T12 — perf: raise pool size (indexes already in schema), SSG/ISR free decode
 - [ ] T13 — fix M1 conflict write-path (trust depends on it)
 - [ ] DB migration: run db:generate + apply (hand to user; do NOT db:push)
@@ -124,7 +125,10 @@ iteration as a checkpoint on the branch so progress survives.
   Next 15 client note: use useParams() hook in client pages (not the async params prop).
 - 2026-06-24 iter18: T4 D2 insurer dashboard — insurerApi (lookup/claim/police); pages: vehicle
   lookup (health grade + factors + event summary, no PII), claim + police minimized intake forms.
-  403 surfaces backend message (not-a-member vs no-agreement). Committed 482cf6a. NEXT: D3 admin.
+  403 surfaces backend message (not-a-member vs no-agreement). Committed 482cf6a.
+- 2026-06-24 iter19: T4 D3 super_admin dashboard — AppShell requireRole gate; adminApi; pages
+  analytics (stat cards + orgs/events tables), orgs (create+add member), agreements (create JSON
+  scope + revoke). Committed d567ee5. *** FRONTEND CORE COMPLETE *** NEXT: T13 backend + wrap pass.
 
 ## Pending DB migration (hand to user; do NOT run db:push)
 Schema changed since M1 (all additive): all M2 tables (T1) + field_claims + garage_jobs.paid/paidAt.
@@ -136,15 +140,16 @@ Generate with `npm run db:generate` and apply via adjust.sql/generated migration
 - No DATABASE_URL guaranteed locally → I can typecheck but should NOT run db:push; will
   generate migration files only when safe, else hand off migration to user.
 
-## Next iteration — T4 iter D3 (super_admin dashboard)
-In web/: app/admin/* for super_admin (AppShell + ADMIN_NAV). Add lib/api.ts adminApi helpers:
-getAnalytics(GET /api/v1/admin/analytics), createOrg(POST /admin/orgs), addOrgMember(POST
-/admin/orgs/members), createAgreement(POST /admin/agreements), revokeAgreement(PATCH
-/admin/agreements/:id/revoke). Gate on session role === "super_admin" (show a notice otherwise).
-  - app/admin/page.tsx — analytics dashboard: stat cards (users, premium users, payments succeeded,
-    credits issued, flags open/resolved) + orgs-by-type + events-by-type tables.
-  - app/admin/orgs/page.tsx — create org form (name/type/country/city) + add-member form (orgId/email/
-    role). (No list endpoint for orgs yet — note that; could add GET /admin/orgs later.)
-  - app/admin/agreements/page.tsx — create agreement (orgId + scope JSON) + revoke by id.
-Token-only. Still NO install. After D3, frontend core done — remaining: T13 backend conflict
-write-path, T12 perf (pool), DB migration handoff, and a final wrap/QA pass. Loop RE-ARMED.
+## Next iteration — T13 (backend conflict write-path) + wind-down
+Backend, branch milestone-2:
+  T13 — wire the M1 conflict detection (CLAUDE.md backlog): in vinController.submitVerifiedSpec,
+  when a DIFFERENT proposed spec arrives for an existing VERIFIED (wmi,vds) key, set vds_cache.status
+  = "conflict" instead of silently overwriting, and keep logging both proposals to verification_log
+  (already happens). ConflictsPanel + POST /resolve already exist to clear it. Compare incoming
+  hardware_specs vs current spec blob; if different and current status verified -> conflict.
+  Typecheck. Commit.
+Then WIND DOWN the loop (frontend core + backend feature-complete): do a final wrap pass —
+  update CLAUDE.md (note Next.js web/ app, new tables/routes, the conflict write-path now wired),
+  leave a short claude.report.md progress report (milestone asked for it), and STOP scheduling new
+  iterations. Summarize remaining handoffs: cd web && npm install; DB migration (db:generate); real
+  ETB provider keys; T12 pool size raise. Do NOT keep looping after the wrap — end cleanly.
