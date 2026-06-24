@@ -1,0 +1,167 @@
+import type { Request, Response } from "express";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { db } from "../db/index.ts";
+import { customers, garage_jobs, garage_job_items, odometer_readings } from "../db/schema.ts";
+import { parseVin } from "../utils/vin.ts";
+import { ingestVehicleEvent } from "../services/eventService.ts";
+import { AppError } from "../middleware/errorHandler.ts";
+import { customerSchema, createGarageJobSchema, updateGarageJobSchema, JOB_STATUSES } from "../utils/validation.ts";
+
+// requireOrg("garage") guarantees both, but narrow for the type-checker.
+function ctx(req: Request): { userId: string; orgId: string } {
+  const userId = req.user?.id;
+  const orgId = req.org?.id;
+  if (!userId) throw new AppError(401, "Unauthorized");
+  if (!orgId) throw new AppError(403, "Not a member of a garage organization");
+  return { userId, orgId };
+}
+
+type JobItemInput = { kind: "labor" | "part"; description: string; qty: number; unitCost: number };
+
+const computeTotal = (items: JobItemInput[]): number => Math.round(items.reduce((s, i) => s + Number(i.qty) * Number(i.unitCost), 0) * 100) / 100;
+
+// ---------------------------------------------------------------------------
+// Customers (garage CRM) — scoped to the caller's org.
+// ---------------------------------------------------------------------------
+export const createCustomer = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const body = customerSchema.parse(req.body);
+  const [row] = await db
+    .insert(customers)
+    .values({ orgId, name: body.name, phone: body.phone ?? null })
+    .returning();
+  return res.status(201).json(row);
+};
+
+export const listCustomers = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const rows = await db.select().from(customers).where(eq(customers.orgId, orgId)).orderBy(desc(customers.createdAt));
+  return res.json(rows);
+};
+
+// ---------------------------------------------------------------------------
+// Jobs (work orders) — create with line items, list, get-with-items, update.
+// ---------------------------------------------------------------------------
+export const createJob = async (req: Request, res: Response) => {
+  const { userId, orgId } = ctx(req);
+  const body = createGarageJobSchema.parse(req.body);
+
+  // A VIN, if given, is canonicalized on the server.
+  const vin = body.vin ? parseVin(body.vin).keyVin : null;
+  const items = (body.items ?? []) as JobItemInput[];
+  const total = computeTotal(items);
+
+  // A referenced customer must belong to this org (no cross-org references).
+  if (body.customerId) {
+    const [c] = await db.select({ id: customers.id }).from(customers).where(and(eq(customers.id, body.customerId), eq(customers.orgId, orgId))).limit(1);
+    if (!c) throw new AppError(404, "Customer not found");
+  }
+
+  const job = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(garage_jobs)
+      .values({
+        orgId,
+        vin,
+        customerId: body.customerId ?? null,
+        status: "intake",
+        odometerIn: body.odometerIn ?? null,
+        totalCost: String(total),
+        createdBy: userId,
+      })
+      .returning();
+    if (!created) throw new AppError(500, "Failed to create job");
+    if (items.length) {
+      await tx.insert(garage_job_items).values(items.map((i) => ({ jobId: created.id, kind: i.kind, description: i.description, qty: String(i.qty), unitCost: String(i.unitCost) })));
+    }
+    return created;
+  });
+
+  const jobItems = await db.select().from(garage_job_items).where(eq(garage_job_items.jobId, job.id));
+  return res.status(201).json({ ...job, items: jobItems });
+};
+
+export const listJobs = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const status = typeof req.query.status === "string" ? req.query.status : undefined;
+  if (status && !(JOB_STATUSES as readonly string[]).includes(status)) throw new AppError(400, "Invalid status filter");
+
+  const where = status ? and(eq(garage_jobs.orgId, orgId), eq(garage_jobs.status, status as (typeof JOB_STATUSES)[number])) : eq(garage_jobs.orgId, orgId);
+  const rows = await db.select().from(garage_jobs).where(where).orderBy(desc(garage_jobs.openedAt));
+  return res.json(rows);
+};
+
+export const getJob = async (req: Request, res: Response) => {
+  const { orgId } = ctx(req);
+  const id = String(req.params.id ?? "");
+  const [job] = await db.select().from(garage_jobs).where(and(eq(garage_jobs.id, id), eq(garage_jobs.orgId, orgId))).limit(1);
+  if (!job) throw new AppError(404, "Job not found");
+  const items = await db.select().from(garage_job_items).where(eq(garage_job_items.jobId, id));
+  return res.json({ ...job, items });
+};
+
+export const updateJob = async (req: Request, res: Response) => {
+  const { userId, orgId } = ctx(req);
+  const id = String(req.params.id ?? "");
+  const body = updateGarageJobSchema.parse(req.body);
+
+  const result = await db.transaction(async (tx) => {
+    // Load the job scoped to this org (the IDOR boundary).
+    const [job] = await tx.select().from(garage_jobs).where(and(eq(garage_jobs.id, id), eq(garage_jobs.orgId, orgId))).limit(1);
+    if (!job) throw new AppError(404, "Job not found");
+
+    // Replace line items if provided, and recompute the total.
+    let total = Number(job.totalCost);
+    if (body.items) {
+      const items = body.items as JobItemInput[];
+      await tx.delete(garage_job_items).where(eq(garage_job_items.jobId, id));
+      if (items.length) {
+        await tx.insert(garage_job_items).values(items.map((i) => ({ jobId: id, kind: i.kind, description: i.description, qty: String(i.qty), unitCost: String(i.unitCost) })));
+      }
+      total = computeTotal(items);
+    }
+
+    // A job "closes" when it first reaches done/delivered.
+    const newStatus = body.status ?? job.status;
+    const closing = (newStatus === "done" || newStatus === "delivered") && job.closedAt === null;
+    const closedAt = closing ? new Date() : job.closedAt;
+    const odometerIn = body.odometerIn ?? job.odometerIn;
+
+    await tx
+      .update(garage_jobs)
+      .set({ status: newStatus, odometerIn: odometerIn ?? null, totalCost: String(total), closedAt: closedAt ?? null })
+      .where(eq(garage_jobs.id, id));
+
+    // On close, feed the shared history: a maintenance/repair event + an odometer
+    // reading (flagged on rollback). Idempotent on the job id so re-closing can't
+    // double-emit or double-credit.
+    if (closing && job.vin) {
+      const items = body.items ? (body.items as JobItemInput[]) : await tx.select().from(garage_job_items).where(eq(garage_job_items.jobId, id));
+      const hasPart = (items as Array<{ kind: string }>).some((i) => i.kind === "part");
+      const occurredAt = closedAt ?? new Date();
+
+      await ingestVehicleEvent(tx, {
+        vin: job.vin,
+        eventType: hasPart ? "repair" : "maintenance",
+        payload: { jobId: id, total, items },
+        occurredAt,
+        recordedBy: userId,
+        orgId,
+        sourceType: "garage",
+        idempotencyKey: `garage-job:${id}`,
+      });
+
+      if (odometerIn != null) {
+        const [prev] = await tx.select({ max: sql<number>`max(${odometer_readings.readingKm})::int` }).from(odometer_readings).where(eq(odometer_readings.vin, job.vin));
+        const flagged = prev?.max != null && odometerIn < prev.max;
+        await tx.insert(odometer_readings).values({ vin: job.vin, readingKm: odometerIn, readAt: occurredAt, source: "garage", recordedBy: userId, orgId, flagged });
+      }
+    }
+
+    return { closed: closing };
+  });
+
+  const [job] = await db.select().from(garage_jobs).where(eq(garage_jobs.id, id)).limit(1);
+  const items = await db.select().from(garage_job_items).where(eq(garage_job_items.jobId, id));
+  return res.json({ ...job, items, closed: result.closed });
+};

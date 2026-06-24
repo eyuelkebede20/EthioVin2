@@ -6,9 +6,10 @@ import rateLimit from "express-rate-limit";
 import vinRoutes from "./routes/vinRoutes.ts";
 import adminRoutes from "./routes/adminRoutes.ts";
 import decodeRoutes from "./routes/decodeRoutes.ts";
+import garageRoutes from "./routes/garageRoutes.ts";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
-import { attachUser, requireRole } from "./middleware/authMiddleware.ts";
+import { attachUser, requireRole, requireOrg } from "./middleware/authMiddleware.ts";
 import { errorHandler, notFound } from "./middleware/errorHandler.ts";
 import "dotenv/config";
 
@@ -100,6 +101,9 @@ app.use("/api/v1/vin", apiLimiter, vinRoutes);
 // tier). attachUser still ran, so a logged-in premium user's /full sub-route can
 // resolve their tier. Rate-limited like the rest of the app surface.
 app.use("/api/v1/decode", apiLimiter, decodeRoutes);
+
+// Garage management — gated to garage-org members; every handler scopes by req.org.id.
+app.use("/api/v1/garage", apiLimiter, requireOrg("garage"), garageRoutes);
 
 // Admin router is role-gated. requireRole already rejects unauthenticated users,
 // so it's used alone (not stacked with requireAuth).
