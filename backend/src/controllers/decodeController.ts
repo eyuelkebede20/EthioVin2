@@ -10,7 +10,7 @@ import { writeAudit } from "../middleware/audit.ts";
 // on the SERVER via parseVin (never trusting client values). Mirrors processVin's
 // lookup order: exact ledger row → DNA cache (with a sibling for make/model/image)
 // → decoded-basics-only on a miss.
-async function resolveVehicle(rawVin: string): Promise<{ identity: VehicleIdentity; specs: Record<string, unknown> | null }> {
+export async function resolveVehicle(rawVin: string): Promise<{ identity: VehicleIdentity; specs: Record<string, unknown> | null }> {
   const { keyVin, wmi, vds_code, year, vis } = parseVin(rawVin);
 
   // 1. Exact VIN already recorded.
