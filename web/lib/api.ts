@@ -166,3 +166,26 @@ export const garageApi = {
   createPart: (body: { name: string; sku?: string; qtyOnHand?: number; reorderLevel?: number; unitCost?: number }) => api<Part>("/api/v1/garage/parts", { method: "POST", body: JSON.stringify(body) }),
   updatePart: (id: string, body: { qtyDelta?: number; qtyOnHand?: number; reorderLevel?: number; unitCost?: number }) => api<Part>(`/api/v1/garage/parts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
 };
+
+// --- Insurer reciprocal exchange ---------------------------------------------
+
+export interface HealthGrade {
+  score: number;
+  grade: "A" | "B" | "C" | "D" | "F";
+  factors: string[];
+}
+export interface InsurerVehicleView {
+  vehicle: VehicleIdentity;
+  healthGrade: HealthGrade;
+  eventSummary: Array<{ type: string; count: number; lastAt: string | null }>;
+}
+
+export const insurerApi = {
+  // EGRESS: minimized insurer view — identity + grade + event counts only (no PII).
+  lookupVehicle: (vin: string) => api<InsurerVehicleView>(`/api/v1/insurance/vehicles/${encodeURIComponent(vin)}`, { cache: "no-store" } as RequestInit),
+  // INTAKE: only the health signal is sent/stored; the server drops anything else.
+  submitClaim: (body: { vin: string; incidentType: string; severityBand: number; incidentDate?: string; payoutBand?: string }) =>
+    api<{ ok: boolean; claimId: string }>("/api/v1/insurance/claims", { method: "POST", body: JSON.stringify(body) }),
+  submitPolice: (body: { vin: string; incidentType: string; severityBand?: number; incidentDate?: string; reportRef?: string }) =>
+    api<{ ok: boolean; reportId: string }>("/api/v1/insurance/police-reports", { method: "POST", body: JSON.stringify(body) }),
+};
