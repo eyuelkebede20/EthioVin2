@@ -246,3 +246,10 @@ export const paymentInitSchema = z.object({
   amount: z.coerce.number().positive().max(10_000_000),
   provider: z.string().trim().min(1).max(40),
 });
+
+// --- Admin settings (feature flags) ---
+export const updateSettingsSchema = z
+  .object({
+    paymentsEnabled: z.boolean().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, "No settings to update");

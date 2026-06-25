@@ -56,10 +56,24 @@ const vehicleSpecSchema = {
         vehicleClass: { type: Type.STRING },
       },
     },
+    // Populated ONLY for electric / hybrid / PHEV vehicles. Internal-combustion
+    // vehicles must leave every field blank so the editor/card can be dropped.
+    electricVehicle: {
+      type: Type.OBJECT,
+      properties: {
+        motorPower: { type: Type.STRING, description: "Peak electric motor power in kilowatts, e.g. '150 kW'. Blank for non-electric vehicles." },
+        batteryCapacity: { type: Type.STRING, description: "Usable battery capacity, e.g. '60 kWh'. Blank for non-electric vehicles." },
+        range: { type: Type.STRING, description: "Electric range, e.g. '450 km'. Blank for non-electric vehicles." },
+        chargingTime: { type: Type.STRING, description: "Typical AC charge time, e.g. '8 h'. Blank for non-electric vehicles." },
+      },
+    },
     marketInformation: {
       type: Type.OBJECT,
       properties: {
-        msrp: { type: Type.STRING },
+        estimatedMarketValue: {
+          type: Type.STRING,
+          description: "Estimated current resale market value in Ethiopian Birr (ETB), e.g. 'ETB 2,500,000'.",
+        },
       },
     },
   },
@@ -77,6 +91,11 @@ Rules:
 - No rare trims
 - Metric units only
 - Conservative, realistic values
+- marketInformation.estimatedMarketValue MUST be the estimated current resale value
+  in Ethiopian Birr (ETB), formatted like "ETB 2,500,000" (never USD or any other currency)
+- Only fill the electricVehicle section (motor power in kW, battery capacity, range,
+  charging time) when the vehicle is electric, hybrid, or plug-in hybrid. For a
+  pure internal-combustion vehicle, leave every electricVehicle field blank.
 `;
 
   const config = {
@@ -119,15 +138,23 @@ Rules:
     throw new Error("AI returned invalid JSON syntax");
   }
 
-  const safeDraft = {
+  const safeDraft: Record<string, Record<string, string | number>> = {
     engine: { engineModel: "", fuelType: "", emissionStandard: "", fuelConsumption: "", ...(parsed.engine || {}) },
     transmission: { gearbox: "", type: "", speeds: 0, driveType: "", ...(parsed.transmission || {}) },
     weightAndCapacity: { curbWeight: "", seats: 0, doors: 0, ...(parsed.weightAndCapacity || {}) },
     dimensions: { length: "", width: "", height: "", wheelbase: "", frontTrack: "", rearTrack: "", ...(parsed.dimensions || {}) },
     tiresAndChassis: { frontTire: "", rearTire: "", ...(parsed.tiresAndChassis || {}) },
     classification: { bodyStyle: "", vehicleClass: "", ...(parsed.classification || {}) },
-    marketInformation: { msrp: "", ...(parsed.marketInformation || {}) },
+    marketInformation: { estimatedMarketValue: "", ...(parsed.marketInformation || {}) },
   };
+
+  // Only surface the electric-vehicle card for cars that are actually electrified.
+  // A pure ICE car never gets an (empty) EV section to render/edit.
+  const fuelType = String(safeDraft.engine?.fuelType ?? "").toLowerCase();
+  const isElectrified = /electr|hybrid|phev|\bev\b|\bbev\b/.test(fuelType);
+  if (isElectrified) {
+    safeDraft.electricVehicle = { motorPower: "", batteryCapacity: "", range: "", chargingTime: "", ...(parsed.electricVehicle || {}) };
+  }
 
   return safeDraft;
 };

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireRole } from "../middleware/authMiddleware.ts";
-import { getUnknownWMIs, updateWMI, getDistinctManufacturers, createOrg, addOrgMember, createAgreement, revokeAgreement, getAnalytics } from "../controllers/adminController.ts";
+import { getUnknownWMIs, updateWMI, getDistinctManufacturers, createOrg, addOrgMember, createAgreement, revokeAgreement, getAnalytics, getSettings, updateSettings } from "../controllers/adminController.ts";
 
 const router = Router();
 
@@ -15,5 +15,7 @@ router.post("/orgs/members", requireRole("super_admin"), addOrgMember);
 router.post("/agreements", requireRole("super_admin"), createAgreement);
 router.patch("/agreements/:id/revoke", requireRole("super_admin"), revokeAgreement);
 router.get("/analytics", requireRole("super_admin"), getAnalytics);
+router.get("/settings", requireRole("super_admin"), getSettings);
+router.patch("/settings", requireRole("super_admin"), updateSettings);
 
 export default router;

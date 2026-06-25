@@ -5,14 +5,24 @@ import { payments } from "../db/schema.ts";
 import { AppError } from "../middleware/errorHandler.ts";
 import { paymentInitSchema } from "../utils/validation.ts";
 import { createCheckout, verifyWebhookSignature, grantPremium } from "../services/paymentService.ts";
+import { getPaymentsEnabled } from "../services/settingsService.ts";
+
+// ---------------------------------------------------------------------------
+// GET /payments/config — is the payments feature currently enabled? Lets the
+// client hide the upgrade UI when a super_admin has toggled payments off.
+// ---------------------------------------------------------------------------
+export const getPaymentConfig = async (_req: Request, res: Response) => {
+  return res.json({ paymentsEnabled: await getPaymentsEnabled() });
+};
 
 // ---------------------------------------------------------------------------
 // POST /payments/init — start a premium purchase. Creates a pending row and
-// returns a (stubbed) checkout. requireAuth.
+// returns a (stubbed) checkout. requireAuth. Blocked when payments are disabled.
 // ---------------------------------------------------------------------------
 export const initPayment = async (req: Request, res: Response) => {
   const userId = req.user?.id;
   if (!userId) throw new AppError(401, "Unauthorized");
+  if (!(await getPaymentsEnabled())) throw new AppError(503, "Payments are temporarily disabled.");
   const { amount, provider } = paymentInitSchema.parse(req.body);
 
   const providerRef = crypto.randomUUID();

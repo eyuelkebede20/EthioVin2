@@ -487,6 +487,13 @@ export const audit_log = pgTable(
   }),
 );
 
+// Key/value app settings (super_admin-toggled feature flags, e.g. payments on/off).
+export const app_settings = pgTable("app_settings", {
+  key: varchar("key", { length: 64 }).primaryKey(),
+  value: jsonb("value").notNull(),
+  updated_at: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // One row per asserted (vin, field, value) by a contributor. The corroboration
 // engine tallies these to resolve a conflict by majority and identify the
 // minority to penalize. (Trust scores change only when a flag RESOLVES.)

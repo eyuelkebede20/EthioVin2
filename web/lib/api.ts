@@ -91,6 +91,10 @@ export function getMyPayments(): Promise<PaymentRow[]> {
   return api<PaymentRow[]>("/api/v1/payments/me", { cache: "no-store" } as RequestInit);
 }
 
+export function getPaymentConfig(): Promise<{ paymentsEnabled: boolean }> {
+  return api<{ paymentsEnabled: boolean }>("/api/v1/payments/config", { cache: "no-store" } as RequestInit);
+}
+
 // --- Garage management (org-scoped server-side; client just calls with cookie) ---
 
 export type JobStatus = "intake" | "in_progress" | "awaiting_parts" | "done" | "delivered" | "cancelled";
@@ -214,6 +218,8 @@ export interface Organization {
 
 export const adminApi = {
   getAnalytics: () => api<Analytics>("/api/v1/admin/analytics", { cache: "no-store" } as RequestInit),
+  getSettings: () => api<{ paymentsEnabled: boolean }>("/api/v1/admin/settings", { cache: "no-store" } as RequestInit),
+  updateSettings: (body: { paymentsEnabled?: boolean }) => api<{ success: boolean; paymentsEnabled: boolean }>("/api/v1/admin/settings", { method: "PATCH", body: JSON.stringify(body) }),
   createOrg: (body: { name: string; type: string; country?: string; city?: string }) => api<Organization>("/api/v1/admin/orgs", { method: "POST", body: JSON.stringify(body) }),
   addOrgMember: (body: { orgId: string; email: string; orgRole?: string }) => api<{ id: string }>("/api/v1/admin/orgs/members", { method: "POST", body: JSON.stringify(body) }),
   createAgreement: (body: { orgId: string; scope: Record<string, unknown> }) => api<{ id: string }>("/api/v1/admin/agreements", { method: "POST", body: JSON.stringify(body) }),

@@ -3,7 +3,8 @@ import { db } from "../db/index.ts";
 import { wmi_mapping, organizations, organization_members, data_sharing_agreements, user, vehicle_events, credit_ledger, data_flags, premium_access, payments } from "../db/schema.ts";
 import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { AppError } from "../middleware/errorHandler.ts";
-import { updateWmiSchema, createOrgSchema, addOrgMemberSchema, dataSharingAgreementSchema } from "../utils/validation.ts";
+import { updateWmiSchema, createOrgSchema, addOrgMemberSchema, dataSharingAgreementSchema, updateSettingsSchema } from "../utils/validation.ts";
+import { getPaymentsEnabled, setSetting, SETTING_KEYS } from "../services/settingsService.ts";
 
 /** WMIs we've seen but can't attribute to a manufacturer yet. */
 export const getUnknownWMIs = async (_req: Request, res: Response) => {
@@ -112,4 +113,17 @@ export const getAnalytics = async (_req: Request, res: Response) => {
     premiumUsers: premiumUsers?.c ?? 0,
     paymentsSucceeded: paymentsSucceeded?.c ?? 0,
   });
+};
+
+// ---------------------------------------------------------------------------
+// Feature settings (super_admin) — currently the payments on/off toggle.
+// ---------------------------------------------------------------------------
+export const getSettings = async (_req: Request, res: Response) => {
+  return res.json({ paymentsEnabled: await getPaymentsEnabled() });
+};
+
+export const updateSettings = async (req: Request, res: Response) => {
+  const body = updateSettingsSchema.parse(req.body);
+  if (body.paymentsEnabled !== undefined) await setSetting(SETTING_KEYS.paymentsEnabled, body.paymentsEnabled);
+  return res.json({ success: true, paymentsEnabled: await getPaymentsEnabled() });
 };

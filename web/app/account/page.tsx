@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Crown, ScanLine } from "lucide-react";
 import SiteHeader from "@/components/SiteHeader";
 import { useSession } from "@/lib/auth-client";
-import { postInitPayment, getMyPayments, ApiError, type PaymentRow } from "@/lib/api";
+import { postInitPayment, getMyPayments, getPaymentConfig, ApiError, type PaymentRow } from "@/lib/api";
 
 // Premium price (ETB). Real checkout opens the provider; the stub URL is a
 // placeholder until ETB provider keys are configured.
@@ -16,6 +16,7 @@ export default function AccountPage() {
   const { data: session, isPending } = useSession();
   const router = useRouter();
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [paymentsEnabled, setPaymentsEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -24,7 +25,10 @@ export default function AccountPage() {
   }, [isPending, session, router]);
 
   useEffect(() => {
-    if (session) getMyPayments().then(setPayments).catch(() => undefined);
+    if (session) {
+      getMyPayments().then(setPayments).catch(() => undefined);
+      getPaymentConfig().then((c) => setPaymentsEnabled(c.paymentsEnabled)).catch(() => undefined);
+    }
   }, [session]);
 
   const buyPremium = async () => {
@@ -63,11 +67,15 @@ export default function AccountPage() {
               <div>
                 <h2 className="text-lead font-bold text-fg">{hasSucceeded ? "Premium active" : "Go Premium"}</h2>
                 <p className="mt-1 max-w-md text-body text-fg-muted">
-                  {hasSucceeded ? "You can unlock full reports and complete vehicle history." : `Unlock full specs, complete history and health grades — ${PREMIUM_PRICE_ETB} ETB / 30 days.`}
+                  {hasSucceeded
+                    ? "You can unlock full reports and complete vehicle history."
+                    : !paymentsEnabled
+                      ? "Payments are temporarily unavailable. Please check back soon."
+                      : `Unlock full specs, complete history and health grades — ${PREMIUM_PRICE_ETB} ETB / 30 days.`}
                 </p>
               </div>
             </div>
-            {!hasSucceeded && (
+            {!hasSucceeded && paymentsEnabled && (
               <button onClick={buyPremium} disabled={busy} className="btn-brand shrink-0">
                 {busy ? "Starting…" : "Get premium"}
               </button>
