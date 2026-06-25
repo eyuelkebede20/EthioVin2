@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.ts";
-import { payments } from "../db/schema.ts";
+import { payments, premium_access } from "../db/schema.ts";
 import { AppError } from "../middleware/errorHandler.ts";
 import { paymentInitSchema } from "../utils/validation.ts";
 import { createCheckout, verifyWebhookSignature, grantPremium } from "../services/paymentService.ts";
@@ -70,4 +70,26 @@ export const listMyPayments = async (req: Request, res: Response) => {
   if (!userId) throw new AppError(401, "Unauthorized");
   const rows = await db.select().from(payments).where(eq(payments.userId, userId)).orderBy(desc(payments.createdAt));
   return res.json(rows);
+};
+
+// ---------------------------------------------------------------------------
+// GET /payments/me/entitlement — the caller's CURRENT premium entitlement.
+// Mirrors requireTier: super_admin is always premium; otherwise an active,
+// unexpired premium_access row. The UI uses this (not payment history) so that
+// access correctly lapses when the 30-day grant expires. requireAuth.
+// ---------------------------------------------------------------------------
+export const getMyEntitlement = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) throw new AppError(401, "Unauthorized");
+  if (req.user?.role === "super_admin") return res.json({ active: true, expiresAt: null });
+
+  const [row] = await db
+    .select({ expiresAt: premium_access.expiresAt })
+    .from(premium_access)
+    .where(and(eq(premium_access.userId, userId), eq(premium_access.tier, "premium"), eq(premium_access.status, "active")))
+    .orderBy(desc(premium_access.expiresAt))
+    .limit(1);
+
+  const active = !!row && (!row.expiresAt || row.expiresAt > new Date());
+  return res.json({ active, expiresAt: active ? (row?.expiresAt ?? null) : null });
 };

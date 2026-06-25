@@ -12,7 +12,7 @@
     "db:studio": "drizzle-kit studio",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --packages=external --outfile=dist/index.js",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\"",
     "start": "node dist/index.js"
   },
   "keywords": [],

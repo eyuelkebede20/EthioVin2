@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Crown, ScanLine } from "lucide-react";
 import SiteHeader from "@/components/SiteHeader";
 import { useSession } from "@/lib/auth-client";
-import { postInitPayment, getMyPayments, getPaymentConfig, ApiError, type PaymentRow } from "@/lib/api";
+import { postInitPayment, getMyPayments, getPaymentConfig, getMyEntitlement, ApiError, type PaymentRow, type Entitlement } from "@/lib/api";
 
 // Premium price (ETB). Real checkout opens the provider; the stub URL is a
 // placeholder until ETB provider keys are configured.
@@ -16,6 +16,7 @@ export default function AccountPage() {
   const { data: session, isPending } = useSession();
   const router = useRouter();
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
   const [paymentsEnabled, setPaymentsEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -27,6 +28,7 @@ export default function AccountPage() {
   useEffect(() => {
     if (session) {
       getMyPayments().then(setPayments).catch(() => undefined);
+      getMyEntitlement().then(setEntitlement).catch(() => undefined);
       getPaymentConfig().then((c) => setPaymentsEnabled(c.paymentsEnabled)).catch(() => undefined);
     }
   }, [session]);
@@ -45,7 +47,11 @@ export default function AccountPage() {
 
   if (isPending || !session) return <main className="p-16 text-center text-body text-fg-muted">Loading…</main>;
 
-  const hasSucceeded = payments.some((p) => p.status === "succeeded");
+  // Authority for premium status is the live entitlement (active + unexpired),
+  // NOT historical payment success — a completed invoice stays "succeeded" forever
+  // but the 30-day grant lapses, so inferring from payments traps expired users.
+  const isPremium = entitlement?.active === true;
+  const expiresLabel = entitlement?.expiresAt ? new Date(entitlement.expiresAt).toLocaleDateString() : null;
 
   return (
     <>
@@ -65,17 +71,19 @@ export default function AccountPage() {
                 <Crown className="h-6 w-6" />
               </span>
               <div>
-                <h2 className="text-lead font-bold text-fg">{hasSucceeded ? "Premium active" : "Go Premium"}</h2>
+                <h2 className="text-lead font-bold text-fg">{isPremium ? "Premium active" : "Go Premium"}</h2>
                 <p className="mt-1 max-w-md text-body text-fg-muted">
-                  {hasSucceeded
-                    ? "You can unlock full reports and complete vehicle history."
+                  {isPremium
+                    ? expiresLabel
+                      ? `Full reports and complete vehicle history are unlocked through ${expiresLabel}.`
+                      : "You can unlock full reports and complete vehicle history."
                     : !paymentsEnabled
                       ? "Payments are temporarily unavailable. Please check back soon."
                       : `Unlock full specs, complete history and health grades — ${PREMIUM_PRICE_ETB} ETB / 30 days.`}
                 </p>
               </div>
             </div>
-            {!hasSucceeded && paymentsEnabled && (
+            {!isPremium && paymentsEnabled && (
               <button onClick={buyPremium} disabled={busy} className="btn-brand shrink-0">
                 {busy ? "Starting…" : "Get premium"}
               </button>

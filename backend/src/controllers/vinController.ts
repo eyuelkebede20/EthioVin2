@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { db } from "../db/index.ts";
 import { vds_cache, wmi_mapping, nhtsa_models, vehicle_specs, verification_log, vehicle_ledger } from "../db/schema.ts";
 import { and, desc, eq, ilike, sql } from "drizzle-orm";
@@ -259,9 +260,9 @@ export const submitVerifiedSpec = async (req: Request, res: Response) => {
     if (existing.status === "verified") {
       // A second proposal for an already-verified key. If it DIFFERS, flag a conflict
       // for super-admin review (keep the original verified spec in place — don't clobber
-      // it); if identical, leave it verified. (Comparison is order-sensitive on the JSON
-      // blob — the spec editor emits stable key order, so this is sufficient in practice.)
-      const differs = JSON.stringify(existing.specs ?? null) !== JSON.stringify(hardware_specs);
+      // it); if identical, leave it verified. Deep-equality (not JSON-string compare) so
+      // a benign resubmit with different key insertion order isn't flagged as a conflict.
+      const differs = !isDeepStrictEqual(existing.specs ?? null, hardware_specs);
       await tx
         .update(vds_cache)
         .set(differs ? { status: "conflict", updated_at: new Date() } : { updated_at: new Date() })
@@ -308,13 +309,25 @@ export const getConflicts = async (_req: Request, res: Response) => {
 export const resolveConflict = async (req: Request, res: Response) => {
   const { wmi, vds_code, selected_spec_id } = resolveConflictSchema.parse(req.body);
 
-  // Only allow selecting a spec that was actually proposed for THIS key.
-  const proposal = await db
-    .select({ id: verification_log.id })
-    .from(verification_log)
-    .where(and(eq(verification_log.wmi, wmi), eq(verification_log.vds_code, vds_code), eq(verification_log.proposed_spec_id, selected_spec_id)))
+  // Allow selecting either (a) a spec actually proposed for THIS key, or (b) the
+  // spec currently on the cache row — i.e. the baseline verified spec. The baseline
+  // is seeded by POST /log (saveVehicleToLedger), which never writes verification_log,
+  // so without this an admin could never resolve a conflict in favour of the original.
+  const [current] = await db
+    .select({ spec_id: vds_cache.spec_id })
+    .from(vds_cache)
+    .where(and(eq(vds_cache.wmi, wmi), eq(vds_cache.vds_code, vds_code)))
     .limit(1);
-  if (!proposal[0]) throw new AppError(400, "selected_spec_id was not proposed for this WMI/VDS");
+  if (!current) throw new AppError(404, "No cache entry for this WMI/VDS");
+
+  if (current.spec_id !== selected_spec_id) {
+    const proposal = await db
+      .select({ id: verification_log.id })
+      .from(verification_log)
+      .where(and(eq(verification_log.wmi, wmi), eq(verification_log.vds_code, vds_code), eq(verification_log.proposed_spec_id, selected_spec_id)))
+      .limit(1);
+    if (!proposal[0]) throw new AppError(400, "selected_spec_id was not proposed for this WMI/VDS");
+  }
 
   const updated = await db
     .update(vds_cache)

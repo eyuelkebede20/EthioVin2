@@ -65,6 +65,19 @@ export function fetchFreeDecode(vin: string): Promise<FreeDecodeView> {
   return api<FreeDecodeView>(`/api/v1/decode/${encodeURIComponent(vin)}`, { next: { revalidate: 3600 } } as RequestInit);
 }
 
+/**
+ * Premium decode (full specs + history). Requires an active entitlement; the
+ * backend returns 402 otherwise. Server components must forward the visitor's
+ * cookies explicitly (server-side fetch carries no browser cookie jar), so pass
+ * the Cookie header through. Never cached — it's per-user, gated data.
+ */
+export function fetchPremiumDecode(vin: string, cookie: string): Promise<PremiumDecodeView> {
+  return api<PremiumDecodeView>(`/api/v1/decode/${encodeURIComponent(vin)}/full`, {
+    cache: "no-store",
+    headers: cookie ? { cookie } : {},
+  } as RequestInit);
+}
+
 // --- Payments ----------------------------------------------------------------
 
 export interface InitPaymentResp {
@@ -93,6 +106,16 @@ export function getMyPayments(): Promise<PaymentRow[]> {
 
 export function getPaymentConfig(): Promise<{ paymentsEnabled: boolean }> {
   return api<{ paymentsEnabled: boolean }>("/api/v1/payments/config", { cache: "no-store" } as RequestInit);
+}
+
+export interface Entitlement {
+  active: boolean;
+  expiresAt: string | null;
+}
+
+/** Current premium entitlement — the authority for "is this user premium NOW". */
+export function getMyEntitlement(): Promise<Entitlement> {
+  return api<Entitlement>("/api/v1/payments/me/entitlement", { cache: "no-store" } as RequestInit);
 }
 
 // --- Garage management (org-scoped server-side; client just calls with cookie) ---
