@@ -36,7 +36,8 @@ export const errorHandler = (err: unknown, _req: Request, res: Response, _next: 
     return res.status(err.statusCode).json({ error: err.message });
   }
 
-  // Anything else is unexpected: log server-side, return a generic message.
-  console.error("[unhandled]", err);
+  // Anything else is unexpected: log server-side (timestamped so host logs show
+  // WHEN it happened), return a generic message.
+  console.error(`[${new Date().toISOString()}] [unhandled] ${_req.method} ${_req.originalUrl}`, err);
   return res.status(500).json({ error: "Internal server error" });
 };

@@ -123,7 +123,19 @@ app.use("/api/v1/admin", requireRole("super_admin", "garage_admin"), adminRoutes
 app.use(notFound);
 app.use(errorHandler);
 
+// Timestamp last-resort crash logs so the host's stderr/error log shows exactly
+// WHEN the process died. NOTE: a module-resolution crash (ERR_MODULE_NOT_FOUND)
+// happens during import BEFORE this file executes, so it cannot be timestamped
+// here — run the bundled dist/index.js (self-contained) to avoid those entirely.
+process.on("uncaughtException", (err) => {
+  console.error(`[${new Date().toISOString()}] [uncaughtException]`, err);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error(`[${new Date().toISOString()}] [unhandledRejection]`, reason);
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT} (allowed origins: ${allowedOrigins.join(", ")})`);
+  console.log(`[${new Date().toISOString()}] Server running on port ${PORT} (allowed origins: ${allowedOrigins.join(", ")})`);
 });
