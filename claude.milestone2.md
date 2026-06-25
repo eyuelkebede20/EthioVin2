@@ -68,8 +68,23 @@ apply; do NOT `db:push` against prod.
   insurer-view vehicle lookup (identity + health grade + event summary; NO PII).
 - `/payments/*` — `GET /config` (flag), `POST /init` (503 when payments off), **public** idempotent
   `POST /webhook` → premium grant, `GET /me`.
-- `/admin/*` (super_admin) — `orgs`, `orgs/members`, `agreements`, `agreements/:id/revoke`,
-  `analytics`, `GET/PATCH /settings` (the payments on/off toggle).
+- `/admin/*` (super_admin) — `GET /orgs` (list + member/agreement counts), `POST /orgs`,
+  `POST /orgs/members`, `GET /orgs/:id` (members + agreements), `POST /agreements`,
+  `PATCH /agreements/:id/revoke`, `GET /analytics`, `GET /contributors` (trust scores, worst-first),
+  `GET /flags` (data-flag queue + competing field_claims), `GET/PATCH /settings` (payments toggle).
+  The trust/fraud reads are READ-ONLY — `trustService` owns score mutations.
+
+### `web/` super_admin dashboard (`app/admin/*`)
+`ADMIN_NAV`: Analytics · Organizations · Trust & Fraud · Conflicts · Settings.
+- **Analytics** (`/admin`) — counts + orgs/events breakdown.
+- **Organizations** (`/admin/orgs`) — lists every org; each row expands to members + agreements with
+  inline add-member and create/revoke-agreement (no blind ID copy-paste). Folds in the old standalone
+  Agreements page (removed).
+- **Trust & Fraud** (`/admin/trust`) — contributor trust scores (100%→down, color-banded) + the
+  data-flag queue showing each conflicting (vin, field) and its competing entries (point 8).
+- **Conflicts** (`/admin/conflicts`) — groups `/vin/conflicts` by `(wmi, vds)`, previews each candidate
+  spec (incl. the baseline), resolves via `POST /vin/resolve`.
+- **Settings** (`/admin/settings`) — payments on/off toggle.
 
 ## Security posture (the "ISO" ask, made concrete)
 Data minimization (insurer raw claims dropped at the Zod intake gate; garage PII stripped at the

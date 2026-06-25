@@ -70,6 +70,34 @@ insurer egress), RBAC/org-scoping, append-only audit logging, and a provable/rev
 4. **Perf (T12):** raise the Postgres pool size for the garage write load.
 5. **Deploy:** frontend → Vercel/Netlify (`NEXT_PUBLIC_BACKEND_URL`); API stays on cPanel.
 
+## Post-review hardening + cPanel deploy + super_admin dashboard (2026-06-25)
+
+### Gemini code review — all findings actioned
+- **F1 (blocker):** backend esbuild no longer `--packages=external` — `dist/index.js` is now a
+  self-contained 5.7 MB bundle (createRequire banner for CJS interop). Boot-verified.
+- **F2:** `web` decode page forwards cookies, fetches `/decode/:vin/full` when entitled, renders a
+  full premium report (specs + history); free teaser otherwise.
+- **F3:** `resolveConflict` accepts the baseline verified spec (the `/log` path seeds no
+  `verification_log` row) so conflicts can resolve in favour of the original.
+- **F5:** conflict detection uses `util.isDeepStrictEqual`, not order-sensitive `JSON.stringify`.
+- **F6:** new `GET /payments/me/entitlement`; account page reads live entitlement (expires correctly).
+- **F4:** Next.js `output: "standalone"` + a `deploy.yml` web job that builds the standalone server
+  and FTPs it to `/home/senaycre/ethiovin-web` (Passenger Node app, startup `server.js`). Legacy
+  `client/` deploy kept until cutover. Verified locally: standalone server serves `/` and `/decode`.
+
+### cPanel runtime notes
+- Backend Node app **startup file must be `dist/index.js`** (self-contained). Running `src/index.ts`
+  crashes with `ERR_MODULE_NOT_FOUND` (no `node_modules` shipped) → API down → CORS/login failures
+  downstream. Error logs are now ISO-timestamped (module-resolution crashes still pre-date app code).
+
+### super_admin dashboard completed (claude.second.md points 6 & 8)
+- Backend reads (super_admin, read-only): `GET /admin/orgs`, `GET /admin/orgs/:id`,
+  `GET /admin/contributors`, `GET /admin/flags`.
+- `web/app/admin`: **Organizations** now lists orgs with expandable members + agreements (inline
+  add/revoke — no blind ID paste; old Agreements page removed). New **Trust & Fraud** page (contributor
+  scores + data-flag queue with competing entries) and **Conflicts** page (resolve spec conflicts).
+- Verified: backend `tsc` clean; `web` `tsc` + `next build` clean (18 routes).
+
 ## Not in scope (deferred, per the plan)
 Mobile/OCR scan, public dealer API, insurer risk-pricing product, ISO 27001 certification, Japan
 chassis decoding.

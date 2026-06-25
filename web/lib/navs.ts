@@ -16,6 +16,7 @@ export const INSURER_NAV: NavItem[] = [
 export const ADMIN_NAV: NavItem[] = [
   { href: "/admin", label: "Analytics" },
   { href: "/admin/orgs", label: "Organizations" },
-  { href: "/admin/agreements", label: "Agreements" },
+  { href: "/admin/trust", label: "Trust & Fraud" },
+  { href: "/admin/conflicts", label: "Conflicts" },
   { href: "/admin/settings", label: "Settings" },
 ];

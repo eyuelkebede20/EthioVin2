@@ -237,14 +237,92 @@ export interface Organization {
   country: string | null;
   city: string | null;
   status: string;
+  createdAt?: string;
+}
+
+export interface OrgListItem extends Organization {
+  memberCount: number;
+  activeAgreements: number;
+}
+
+export interface OrgMember {
+  id: string;
+  userId: string;
+  orgRole: string;
+  createdAt: string;
+  email: string | null;
+  name: string | null;
+}
+
+export interface AgreementRow {
+  id: string;
+  orgId: string;
+  scope: Record<string, unknown>;
+  acceptedBy: string;
+  acceptedAt: string;
+  status: string;
+  revokedAt: string | null;
+}
+
+export interface OrgDetail {
+  org: Organization;
+  members: OrgMember[];
+  agreements: AgreementRow[];
+}
+
+export interface Contributor {
+  userId: string;
+  score: string; // numeric — percentage 0–100
+  updatedAt: string;
+  email: string | null;
+  name: string | null;
+}
+
+export interface FieldClaim {
+  id: string;
+  flagId: string | null;
+  value: string;
+  userId: string | null;
+  email: string | null;
+  createdAt: string;
+}
+
+export interface DataFlag {
+  id: string;
+  vin: string;
+  field: string;
+  status: "open" | "corroborating" | "resolved" | string;
+  entriesCount: number;
+  resolvedValue: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  claims: FieldClaim[];
 }
 
 export const adminApi = {
   getAnalytics: () => api<Analytics>("/api/v1/admin/analytics", { cache: "no-store" } as RequestInit),
   getSettings: () => api<{ paymentsEnabled: boolean }>("/api/v1/admin/settings", { cache: "no-store" } as RequestInit),
   updateSettings: (body: { paymentsEnabled?: boolean }) => api<{ success: boolean; paymentsEnabled: boolean }>("/api/v1/admin/settings", { method: "PATCH", body: JSON.stringify(body) }),
+  listOrgs: () => api<OrgListItem[]>("/api/v1/admin/orgs", { cache: "no-store" } as RequestInit),
+  getOrg: (id: string) => api<OrgDetail>(`/api/v1/admin/orgs/${id}`, { cache: "no-store" } as RequestInit),
   createOrg: (body: { name: string; type: string; country?: string; city?: string }) => api<Organization>("/api/v1/admin/orgs", { method: "POST", body: JSON.stringify(body) }),
   addOrgMember: (body: { orgId: string; email: string; orgRole?: string }) => api<{ id: string }>("/api/v1/admin/orgs/members", { method: "POST", body: JSON.stringify(body) }),
   createAgreement: (body: { orgId: string; scope: Record<string, unknown> }) => api<{ id: string }>("/api/v1/admin/agreements", { method: "POST", body: JSON.stringify(body) }),
   revokeAgreement: (id: string) => api<{ success: boolean }>(`/api/v1/admin/agreements/${id}/revoke`, { method: "PATCH" }),
+  listContributors: () => api<Contributor[]>("/api/v1/admin/contributors", { cache: "no-store" } as RequestInit),
+  listFlags: () => api<DataFlag[]>("/api/v1/admin/flags", { cache: "no-store" } as RequestInit),
+};
+
+// --- Spec conflicts (super_admin) — raw joined rows from /vin/conflicts -------
+
+export interface ConflictRow {
+  vds_cache: { wmi: string; vds_code: string; spec_id: string; status: string; updated_at: string | null };
+  verification_log: { id: string; proposed_spec_id: string; admin_id: string; timestamp: string } | null;
+  vehicle_specs: { id: string; hardware_specs: Record<string, unknown> } | null;
+}
+
+export const conflictApi = {
+  list: () => api<ConflictRow[]>("/api/v1/vin/conflicts", { cache: "no-store" } as RequestInit),
+  resolve: (body: { wmi: string; vds_code: string; selected_spec_id: string }) =>
+    api<{ success: boolean }>("/api/v1/vin/resolve", { method: "POST", body: JSON.stringify(body) }),
 };

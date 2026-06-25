@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { db } from "../db/index.ts";
-import { wmi_mapping, organizations, organization_members, data_sharing_agreements, user, vehicle_events, credit_ledger, data_flags, premium_access, payments } from "../db/schema.ts";
-import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
+import { wmi_mapping, organizations, organization_members, data_sharing_agreements, user, vehicle_events, credit_ledger, data_flags, field_claims, contributor_scores, premium_access, payments } from "../db/schema.ts";
+import { and, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { AppError } from "../middleware/errorHandler.ts";
 import { updateWmiSchema, createOrgSchema, addOrgMemberSchema, dataSharingAgreementSchema, updateSettingsSchema } from "../utils/validation.ts";
 import { getPaymentsEnabled, setSetting, SETTING_KEYS } from "../services/settingsService.ts";
@@ -52,6 +52,47 @@ export const createOrg = async (req: Request, res: Response) => {
   const body = createOrgSchema.parse(req.body);
   const [row] = await db.insert(organizations).values({ name: body.name, type: body.type, country: body.country ?? null, city: body.city ?? null }).returning();
   return res.status(201).json(row);
+};
+
+/** List every organization with member + active-agreement counts (for the admin
+ *  console — so onboarding isn't done by blind copy-paste of IDs). */
+export const listOrgs = async (_req: Request, res: Response) => {
+  const orgs = await db.select().from(organizations).orderBy(desc(organizations.createdAt));
+  const memberCounts = await db
+    .select({ orgId: organization_members.orgId, c: sql<number>`count(*)::int` })
+    .from(organization_members)
+    .groupBy(organization_members.orgId);
+  const agreementCounts = await db
+    .select({ orgId: data_sharing_agreements.orgId, c: sql<number>`count(*)::int` })
+    .from(data_sharing_agreements)
+    .where(eq(data_sharing_agreements.status, "active"))
+    .groupBy(data_sharing_agreements.orgId);
+
+  const members = new Map(memberCounts.map((m) => [m.orgId, m.c]));
+  const agreements = new Map(agreementCounts.map((a) => [a.orgId, a.c]));
+  return res.json(orgs.map((o) => ({ ...o, memberCount: members.get(o.id) ?? 0, activeAgreements: agreements.get(o.id) ?? 0 })));
+};
+
+/** One org with its members (joined to user email) and its agreements. */
+export const getOrgDetail = async (req: Request, res: Response) => {
+  const id = String(req.params.id ?? "");
+  const [org] = await db.select().from(organizations).where(eq(organizations.id, id)).limit(1);
+  if (!org) throw new AppError(404, "Organization not found");
+
+  const members = await db
+    .select({ id: organization_members.id, userId: organization_members.userId, orgRole: organization_members.orgRole, createdAt: organization_members.createdAt, email: user.email, name: user.name })
+    .from(organization_members)
+    .leftJoin(user, eq(organization_members.userId, user.id))
+    .where(eq(organization_members.orgId, id))
+    .orderBy(desc(organization_members.createdAt));
+
+  const agreements = await db
+    .select()
+    .from(data_sharing_agreements)
+    .where(eq(data_sharing_agreements.orgId, id))
+    .orderBy(desc(data_sharing_agreements.acceptedAt));
+
+  return res.json({ org, members, agreements });
 };
 
 /** Add an existing user (by email) as a member of an org. */
@@ -113,6 +154,46 @@ export const getAnalytics = async (_req: Request, res: Response) => {
     premiumUsers: premiumUsers?.c ?? 0,
     paymentsSucceeded: paymentsSucceeded?.c ?? 0,
   });
+};
+
+// ---------------------------------------------------------------------------
+// Trust & fraud oversight (super_admin) — READ-ONLY. The trust state machine
+// (trustService) owns score changes; this just surfaces them for review.
+// ---------------------------------------------------------------------------
+
+/** Contributor trust scores (the "Upwork rating"), worst first so fraud surfaces. */
+export const listContributors = async (_req: Request, res: Response) => {
+  const rows = await db
+    .select({ userId: contributor_scores.userId, score: contributor_scores.score, updatedAt: contributor_scores.updatedAt, email: user.email, name: user.name })
+    .from(contributor_scores)
+    .leftJoin(user, eq(contributor_scores.userId, user.id))
+    .orderBy(contributor_scores.score, desc(contributor_scores.updatedAt))
+    .limit(500);
+  return res.json(rows);
+};
+
+/** Data-flag queue: each conflicting (vin, field) with its competing entries
+ *  (who claimed what), newest first. Drives the fraud-review UI. */
+export const listFlags = async (_req: Request, res: Response) => {
+  const flags = await db.select().from(data_flags).orderBy(desc(data_flags.createdAt)).limit(200);
+  if (flags.length === 0) return res.json([]);
+
+  const flagIds = flags.map((f) => f.id);
+  const claims = await db
+    .select({ id: field_claims.id, flagId: field_claims.flagId, value: field_claims.value, userId: field_claims.userId, email: user.email, createdAt: field_claims.createdAt })
+    .from(field_claims)
+    .leftJoin(user, eq(field_claims.userId, user.id))
+    .where(inArray(field_claims.flagId, flagIds))
+    .orderBy(field_claims.createdAt);
+
+  const byFlag = new Map<string, typeof claims>();
+  for (const c of claims) {
+    if (!c.flagId) continue;
+    const list = byFlag.get(c.flagId) ?? [];
+    list.push(c);
+    byFlag.set(c.flagId, list);
+  }
+  return res.json(flags.map((f) => ({ ...f, claims: byFlag.get(f.id) ?? [] })));
 };
 
 // ---------------------------------------------------------------------------
