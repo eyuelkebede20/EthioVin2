@@ -30,7 +30,10 @@ This is a **two-package monorepo**, NOT a single app. Paths below are relative t
 - `.github/workflows/deploy.yml` — CI: builds both, FTP-deploys to cPanel on push to `main`
 - `zipit.ps1` — local helper to zip the project
 
-There is **no root `package.json`** — run `npm` commands inside `backend/` or `client/`.
+There is **no root `package.json`** — run `npm` commands inside `backend/`, `client/`, or `web/`.
+
+**Node 22+ is required across all packages** (host + CI run Node 22). Some deps now enforce it via
+`engines` (e.g. the legacy `client/` Kysely bump → `node >= 22`), so Node 20 will warn or fail to install.
 
 ---
 
@@ -415,8 +418,9 @@ guards `/api/auth/*`). Roles allowed are in parentheses.
   flags `conflict` when a *differing* `hardware_specs` proposal arrives for an already-`verified`
   `(wmi, vds)` key (it keeps the original verified spec in place rather than overwriting), logs
   both proposals to `verification_log`, and leaves resolution to `ConflictsPanel` + `POST /resolve`.
-  Identical re-submits stay verified; new/pending keys verify. (Blob comparison is JSON-string,
-  order-sensitive — fine in practice since the spec editor emits stable key order.)
+  Identical re-submits stay verified; new/pending keys verify. (Blob comparison uses
+  `util.isDeepStrictEqual`, so a benign resubmit with different key insertion order is NOT
+  flagged as a conflict — don't revert it to a `JSON.stringify` compare.)
 - Build-tooling deps (`esbuild` via `drizzle-kit`) still carry advisories that only `npm audit
   fix --force` (a major bump) would clear — deferred (see "Dependency / vulnerability posture").
 

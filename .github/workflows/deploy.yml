@@ -34,6 +34,38 @@ jobs:
           local-dir: ./client/dist/
           server-dir: /public_html/ethiovin/
 
+      # --- M2 Next.js app (web/) — runs SSR under cPanel/Passenger -------------
+      # Built with `output: "standalone"` so the artifact is a self-contained
+      # Node server (.next/standalone/server.js + traced node_modules). Next does
+      # NOT trace static assets or public/ into standalone, so we copy them in by
+      # hand (the documented standalone packaging step). NEXT_PUBLIC_* is inlined
+      # at build time, so the API URL must be present here.
+      - name: Build Web App (Next.js standalone)
+        working-directory: ./web
+        env:
+          NEXT_PUBLIC_BACKEND_URL: https://ethiovinapi.senaycreatives.com
+        run: |
+          npm install
+          npm run build
+          cp -r .next/static .next/standalone/.next/static
+          if [ -d public ]; then cp -r public .next/standalone/public; fi
+          # Passenger restarts the Node app when tmp/restart.txt changes.
+          mkdir -p .next/standalone/tmp
+          echo "restart ${GITHUB_SHA} $(date +%s)" > .next/standalone/tmp/restart.txt
+
+      - name: Deploy Web App via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./web/.next/standalone/
+          # server-dir is relative to the FTP home (/home/senaycre/), exactly like
+          # the backend's /ethiovin-api/ → /home/senaycre/ethiovin-api. So this maps
+          # to /home/senaycre/ethiovin-web. Create a cPanel "Setup Node.js App"
+          # there (Node 22, startup file = server.js) — a sibling to the API app.
+          server-dir: /ethiovin-web/
+
       # Bundle the backend to plain JS on the (Linux) runner, so production runs
       # `node dist/index.js` — no tsx/esbuild native binaries needed on the host.
       - name: Build Backend
