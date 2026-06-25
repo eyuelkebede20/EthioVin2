@@ -26,6 +26,16 @@ better-auth (extended, not rewritten); the frontend was re-platformed to Next.js
   health view); `/payments/*` (idempotent webhook → premium); `/admin/*` (onboarding + analytics).
 - **T13:** conflict write-path wired — a differing spec proposal flags `conflict` for review instead
   of silently overwriting.
+- **Payments toggle:** super_admin can switch payments on/off (`app_settings` + `/admin/settings`);
+  `/payments/init` returns 503 and the upgrade UI hides when off.
+
+## Verification (2026-06-25)
+- Backend: `npm run typecheck` clean, `npm run build` (esbuild) clean — 90.5 kB bundle.
+- Frontend: `cd web && npm install` ok, `npx tsc --noEmit` clean, `npm run build` clean — all 17
+  routes compile, `/decode/[vin]` is server-rendered.
+- Design system: audited token-discipline — every raw color lives only in `web/app/globals.css`;
+  no hardcoded hex or inline styles in any page/component. Build validates all `@apply` tokens resolve.
+- Minor: 3 moderate npm-audit advisories in the `web/` Next build chain (dev tooling, non-blocking).
 
 ### Frontend — core complete (`web/`, Next.js 15)
 - Pure design-system tokens (`globals.css` → Tailwind), `DESIGN.md`.

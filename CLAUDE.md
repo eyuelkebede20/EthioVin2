@@ -5,6 +5,22 @@ specs when the (make+hardware) is already known, and falls back to an admin veri
 flow (Gemini spec draft + Serper image search) for unknown vehicles. The verified result
 is cached so future cars of the same model decode instantly — the "self-improving" core.
 
+## Documentation map (where to look)
+
+This file (`CLAUDE.md`) is the lean, stable source of truth — core conventions + the M1 decoder.
+Working detail lives in dedicated chapters so this file stays uncluttered:
+
+| Doc | What's in it |
+|-----|--------------|
+| `CLAUDE.md` (this) | Core conventions, VIN parsing rules, the cache model, auth, M1 API surface. Read first. |
+| `claude.milestone2.md` | **M2 detail** — new tables/middleware/services/routes, the `web/` Next.js app + design system, stubs/handoffs. Read before touching M2 code. |
+| `MILESTONE_2_PLAN.md` | The M2 CEO plan + 11-section review (architecture, security, sequencing, failure registry). |
+| `claude.report.md` | M2 progress report — what shipped, what's stubbed, the handoffs. |
+| `tasks.md` | Claude's working build journal / task notes (per-iteration progress, gotchas). Not formal docs. |
+| `web/DESIGN.md` | The `web/` design-system token reference. |
+
+Future milestones follow the same pattern: detail in `claude.milestone<N>.md`, a pointer here.
+
 ## Repository layout (monorepo)
 
 This is a **two-package monorepo**, NOT a single app. Paths below are relative to the repo root.
@@ -406,64 +422,13 @@ guards `/api/auth/*`). Roles allowed are in parentheses.
 
 ---
 
-## Milestone 2 — the contributor network (built on branch `milestone-2`)
+## Milestone 2 — the contributor network (branch `milestone-2`)
 
-M2 turns the decoder into a multi-sided data network: a public free/premium decode funnel, a
-trust-scored contributor network (garages/insurers/diagnosticians), a credit economy, and a new
-Next.js frontend. Backend stays Express + Drizzle + Postgres + better-auth (extended, NOT rewritten).
-Full plan + review: `MILESTONE_2_PLAN.md`. Live build journal: `note.claude.md`.
+M2 extends the decoder into a multi-sided data network: a public free/premium decode funnel, a
+trust-scored contributor network (garages/insurers/diagnosticians), a credit economy, and a **new
+Next.js frontend in `web/`** (the legacy Vite SPA `client/` is M1). Backend stays Express + Drizzle +
+Postgres + better-auth (extended, not rewritten).
 
-### New frontend: `web/` (Next.js 15, App Router)
-A second frontend alongside the legacy Vite SPA (`client/`), built to deploy on Vercel while the API
-stays on cPanel. **`client/` is the M1 SPA; `web/` is the M2 re-platform.** Why re-platform: the SPA
-gates everything behind login and passes data via router nav-state (no SSR, not shareable) — the
-public decode funnel needs server rendering.
-- **Design system:** pure CSS-variable tokens in `web/app/globals.css` (warm orange/amber, type
-  scale, radius, elevation, motion) exposed to Tailwind in `web/tailwind.config.ts`. Single source
-  of truth — never hard-code a hex. See `web/DESIGN.md`.
-- `web/lib/api.ts` — fetch wrapper + typed `DecodeView` (mirrors backend serializer) + `garageApi`/
-  `insurerApi`/`adminApi`. `web/lib/auth-client.ts` — better-auth React client → Express `/api/auth`.
-- Public: `app/page.tsx` (landing), `app/decode/[vin]` (SSR free decode + paywall). Auth:
-  `app/login`, `app/account` (premium checkout). Dashboards (via `components/AppShell`, session +
-  optional role gated): `app/garage/*`, `app/insurer/*`, `app/admin/*`.
-- **Not installed in the build loop** — run `cd web && npm install && npm run dev`.
-
-### New backend tables (`db/schema.ts`, all additive)
-`organizations`, `organization_members`, `data_sharing_agreements`, `premium_access`, `payments`,
-`vehicle_events` (the history spine), `field_claims`, `odometer_readings`, `insurance_claims`*,
-`police_reports`*, `customers`, `garage_jobs`, `garage_job_items`, `appointments`, `parts`,
-`contributor_scores`, `data_flags`, `score_adjustments`, `credit_ledger`, `audit_log`.
-(* regulated: minimized + audited.) **A migration is pending** — `npm run db:generate` then apply
-(do NOT `db:push` against prod).
-
-### New middleware (`middleware/`)
-- `requireOrg(...types)` — gates an org dashboard, sets `req.org = { id, type, role }`; the
-  org-A-can't-touch-org-B boundary (controllers scope every query by `req.org.id`).
-- `requireTier("premium")` — premium gate; 402 when closed. `audit.ts` — `writeAudit()` +
-  `audit()` middleware (append-only, visible-on-failure, never breaks the request).
-
-### New services (`services/`)
-- `trustService.ts` — corroboration state machine. A value is trusted at `corroborateAt` agreeing
-  entries; a conflict resolves by clear majority at `resolveAt`; the minority loses score **only on
-  resolution, never on entry**. Curve confirmed "Forgiving start" (2/3/−10) in `TRUST_CONFIG`.
-- `creditService.ts` — append-only `credit_ledger` with a per-user advisory lock + running balance
-  (never `SUM()` under a race). Redemption gated by `CREDIT_REDEMPTION_MODE` (default `neutral`).
-- `eventService.ts` — `ingestVehicleEvent`: the shared write path (idempotent event + trust-weighted
-  credit + per-field corroboration, one tx; reads score via `tx` not `db` for single-pool safety).
-- `decodeView.ts` — `buildDecodeView`: the single free/premium tier boundary.
-- `healthGrade.ts` — pure A–F vehicle grade from aggregated signals.
-- `paymentService.ts` — provider adapter (STUBBED until ETB keys) + `grantPremium`.
-
-### New routes (all under `/api/v1`)
-- `GET /decode/:vin` — **public** free decode (the funnel). `GET /decode/:vin/full` — premium.
-- `/garage/*` (`requireOrg("garage")`) — customers, jobs (+ items, close→event), appointments,
-  parts, invoice/pay. `/insurance/*` (`requireOrg("insurer")` + active agreement) — minimized
-  claim/police intake + insurer-view vehicle lookup. `/payments/*` — `/init`, **public** idempotent
-  `/webhook` → premium grant, `/me`. `/admin/*` extended — `orgs`, `orgs/members`, `agreements`,
-  `agreements/:id/revoke`, `analytics` (super_admin).
-
-### Stubs / handoffs
-- Payment provider calls are stubbed (`createCheckout`/`verifyWebhookSignature`) — wire real
-  Telebirr/Chapa/Santimpay keys + HMAC signature verification before production.
-- Credit redemption model is deferred behind `CREDIT_REDEMPTION_MODE` (decide after phase 3).
-- DB pool is still `max: 1` — raise for the garage SaaS write load.
+**The detail lives in `claude.milestone2.md`** — new tables, middleware (`requireOrg`/`requireTier`/
+`audit`), services (trust/credit/event-spine/decode/health/payment/settings), routes, the design
+system, and stubs/handoffs. Read that file before touching M2 code. See also the Documentation map below.

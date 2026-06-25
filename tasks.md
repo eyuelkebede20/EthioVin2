@@ -1,7 +1,19 @@
-# note.claude.md — Claude's personal working note (Milestone 2)
+# tasks.md — Claude's working note-taker / task journal
 
-> My scratch/progress note for the M2 build. Not user-facing docs. Updated every loop iteration.
-> Source of truth for the plan: `MILESTONE_2_PLAN.md`. Decisions also in project memory.
+> My scratch + progress notes (formerly note.claude.md). Not user-facing docs — the formal docs are
+> `CLAUDE.md`, `claude.milestone2.md`, `MILESTONE_2_PLAN.md`, `claude.report.md`. Keep per-task
+> progress, decisions, and gotchas here. Plan source: `MILESTONE_2_PLAN.md`; decisions also in memory.
+
+## Post-loop additions (2026-06-25)
+- Super_admin payments toggle shipped (app_settings + settingsService; /payments/config + /admin/settings;
+  account hides Get Premium when off; app/admin/settings toggle). Backend typecheck+build clean.
+- VERIFIED THE BUILD: `cd web && npm install` (127 pkgs), `npx tsc --noEmit` clean, `npm run build`
+  clean (17 routes; /decode/[vin] dynamic/SSR). Backend `npm run typecheck` + `npm run build` (esbuild,
+  90.5kb) clean. Design system audited: all raw colors only in web/app/globals.css — zero hardcoded
+  hex/inline-style in pages/components. 3 moderate npm-audit advisories in web dev deps (Next chain).
+- DOC RESTRUCTURE: CLAUDE.md slimmed (M2 detail -> claude.milestone2.md) + Documentation-map chapter
+  added; this file renamed note.claude.md -> tasks.md.
+- Pending: user to push branch milestone-2 + review. DB migration still a handoff (db:generate; not push).
 
 ## Mode
 Self-paced coding loop. Branch: `milestone-2` (off `main`). NOT pushing. Committing each
