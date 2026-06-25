@@ -140,7 +140,14 @@ Generate with `npm run db:generate` and apply via adjust.sql/generated migration
 - No DATABASE_URL guaranteed locally → I can typecheck but should NOT run db:push; will
   generate migration files only when safe, else hand off migration to user.
 
-## Next iteration — T13 (backend conflict write-path) + wind-down
+## LOOP COMPLETE (2026-06-24 iter20)
+T13 conflict write-path wired + typecheck clean (committed c246b7a). Wrap pass done: CLAUDE.md
+updated (M2 section + conflict backlog marked done), claude.report.md written. Loop STOPPED — no
+more wakeups scheduled. Remaining = handoffs only (cd web && npm install; db:generate migration;
+real ETB payment keys; raise DB pool T12). Backend feature-complete + frontend core complete.
+Branch milestone-2 NOT pushed (user decides).
+
+## (historical) Next iteration — T13 (backend conflict write-path) + wind-down
 Backend, branch milestone-2:
   T13 — wire the M1 conflict detection (CLAUDE.md backlog): in vinController.submitVerifiedSpec,
   when a DIFFERENT proposed spec arrives for an existing VERIFIED (wmi,vds) key, set vds_cache.status
