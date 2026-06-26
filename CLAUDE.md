@@ -60,9 +60,14 @@ There is **no root `package.json`** — run `npm` commands inside `backend/`, `c
   - `index.ts` — `db` client (postgres-js).
   - `migrate.ts` — applies generated migrations (`node-postgres` migrator; `npm run db:migrate`).
   - `seed.ts` — seeds `wmi_mapping` + fetches NHTSA models for ~27 makes (`npm run db:seed`).
-  - `migrations/` — generated SQL + `meta/` journal (3 migrations as of writing).
-  - `setup.sql` — full `pg_dump` of the schema (bootstrap a fresh DB by hand).
-  - `adjust.sql` — **idempotent** migration to bring an EXISTING DB up to current schema (safe to re-run; does not create tables).
+  - `migrations/` — generated SQL + `meta/` journal. `0003_*.sql` is the full **M2** additive schema
+    (all ~20 tables/enums/FKs/indexes). ⚠️ The `0000`–`0002` `.sql` files were never committed (only
+    their snapshots are), so `npm run db:migrate` can't replay history — apply via the SQL files below.
+  - `setup.sql` — full `pg_dump` of the schema (bootstrap a fresh DB by hand). **M1-era; stale for M2.**
+  - `adjust.sql` — **idempotent** M1 adjustment (columns/indexes/FK; does not create tables).
+  - `m2.sql` — **idempotent** M2 bootstrap (`CREATE TABLE/INDEX IF NOT EXISTS`, guarded enums + FKs).
+    Safe to run against prod regardless of whether a dev `db:push` already created some tables:
+    `psql "$DATABASE_URL" -f src/db/m2.sql`. This is the recommended way to apply M2 to an existing DB.
 - `controllers/` — `vinController.ts` (scan/log/verify/specs/conflicts/resolve/draft/images), `adminController.ts` (WMI management).
 - `routes/` — `vinRoutes.ts` (`/api/v1/vin/*`), `adminRoutes.ts` (`/api/v1/admin/*`).
 - `middleware/`
