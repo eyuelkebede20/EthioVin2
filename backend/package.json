@@ -9,6 +9,7 @@
     "db:push": "drizzle-kit push",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "logs:prune": "tsx src/db/prune.ts",
     "db:studio": "drizzle-kit studio",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",

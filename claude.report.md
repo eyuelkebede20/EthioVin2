@@ -101,3 +101,54 @@ insurer egress), RBAC/org-scoping, append-only audit logging, and a provable/rev
 ## Not in scope (deferred, per the plan)
 Mobile/OCR scan, public dealer API, insurer risk-pricing product, ISO 27001 certification, Japan
 chassis decoding.
+
+---
+
+# EthioVin — Milestone 3 Progress Report
+
+_Branch: `milestone-2` (M3 built here; detail in `claude.milestone3.md`, contract in `API_REFERENCE.md`)._
+
+## What M3 is
+Packages the decode engine as a standalone, sellable developer product: a keyed public API
+(`POST /v1/decode`) metered by prepaid **credits**, purchasable in ETB via **Chapa** or promo
+codes, with a developer portal for keys/usage/billing. Additive to M1/M2 — same Express app,
+same Postgres, same `web/`; **one shared credit balance** with M2 (no second wallet).
+
+## Shipped — backend API platform (T1–T9; `tsc` + esbuild bundle clean; committed incrementally)
+
+- **T1 Schema:** 6 additive tables + 4 enums (`api_key`, `api_request_log`, `api_idempotency`,
+  `promo_code`, `promo_redemption`, `credit_purchase`); idempotent `db/m3.sql`; migration `0004`;
+  M3 Zod schemas. Zero changes to existing tables.
+- **T2 Keys/pipeline:** `apiKeyService` (`evn_live_` 256-bit keys, SHA-256 lookup, show-once,
+  revoke; `evn_test_` reserved+rejected); `requireApiKey` (Bearer/X-API-Key, uniform 401);
+  `ipFlood`/`invalidKey`(401-only)/`perKey`(dynamic tier) limiters; `/v1` router with its OWN
+  `{ error: { code, message, doc_url? } }` envelope, isolated from the internal shape.
+- **T3 Credit bridge:** single adapter over M2's `credit_ledger` — `charge` (guarded serialized
+  decrement → `InsufficientCreditsError`), `grant` (optional caller tx for atomic guard-row +
+  grant), `balance`, `hasGrantRef`. Owner = `user.id` (one balance per account confirmed).
+- **T4/T9 Decode:** `POST /v1/decode` — parse-only & invalid VINs free, hits charged 1 credit via
+  guarded decrement, **no paid data on a failed charge (402)**, full request logging, and
+  `Idempotency-Key` replay (same key+body → stored response, no re-charge; different body → 409).
+- **T5 Account/usage/health:** `GET /v1/account`, `GET /v1/usage` (per-day, ≤92d), `GET /v1/health`.
+- **T6 Portal keys:** `/api/v1/dev/keys` CRUD (ownership-checked); first key fires the one-time
+  25-credit signup grant (idempotent via ledger ref); new-key RPM defaults by purchase history.
+- **T7 Billing (Chapa):** `lib/pricing.ts` (single price source), `/billing/packs|checkout|
+  purchase/:txRef`; `chapaService` (initialize + authoritative verify + raw-body HMAC webhook);
+  `settlePurchase` (verify → pending→paid + grant + tier bump in one tx, terminal-state + unique
+  `tx_ref` replay guards); webhook mounted pre-`express.json()`; poll-fallback re-verify.
+- **T8 Promo/admin:** transactional promo redeem (row lock + `unique(promo,owner)` race guard +
+  distinct `promo_*` codes + per-account limiter); admin promo CRUD, manual credit grant
+  (by id/email), key-limit override — all audit-logged, super_admin.
+- **T14 (partial):** `DB_POOL_MAX` (default 5) pool bump; `npm run logs:prune` (180-day retention).
+
+## Not yet built (next phase)
+- **T10–T12 `web/`:** developer dashboard (`/dashboard/api` — keys/usage/billing), landing page
+  (`/developers` + canned-VIN live demo), docs page (`/developers/docs` from `API_REFERENCE.md`).
+- **T13 tests:** failure-registry assertions (wallet race, no-paid-data-on-402, parse-only free,
+  402≠429, webhook replay, promo race).
+- **T14 launch:** run `m3.sql` on prod, set `CHAPA_*`/`PUBLIC_API_BASE_URL`, pin Passenger to 1
+  instance, cron the prune job, seed a launch promo, smoke-test a real Chapa test payment.
+
+## New env vars (backend/.env)
+`CHAPA_SECRET_KEY`, `CHAPA_WEBHOOK_SECRET`, `PUBLIC_API_BASE_URL` (see `claude.milestone3.md` §11);
+optional `DB_POOL_MAX`, `LOG_RETENTION_DAYS`. Missing Chapa vars disable billing (503), not decode.
