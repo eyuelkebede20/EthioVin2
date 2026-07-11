@@ -172,3 +172,30 @@ Then WIND DOWN the loop (frontend core + backend feature-complete): do a final w
   leave a short claude.report.md progress report (milestone asked for it), and STOP scheduling new
   iterations. Summarize remaining handoffs: cd web && npm install; DB migration (db:generate); real
   ETB provider keys; T12 pool size raise. Do NOT keep looping after the wrap — end cleanly.
+
+---
+
+## M3 wrap plan (2026-07-11) — build one by one, per user
+
+Backend `/v1` API platform (T1–T9 + T14 partial) is DONE, typechecks + bundles, pushed to
+`milestone-2`. Remaining, in order:
+
+- [x] **Step 1 — web/ developer portal (T10–T12)** — DONE. Dashboard (keys/usage/billing),
+  landing (+ live demo), docs (renders API_REFERENCE.md via prebuild copy). Backend added
+  `GET /dev/usage/summary` + keyless `GET /dev/demo/:vin`. web `tsc` + `next build` clean (21 routes).
+  - `/dashboard/api`: Keys tab (create modal w/ show-once key + copy + "won't see again"
+    warning; revoke), Usage tab (daily decodes/hit-ratio/credits from `/dev/usage/summary`
+    or `/v1/usage`), Billing tab (balance, packs → Chapa checkout, promo input, history).
+  - `/developers`: landing (hero + free-key CTA, canned-VIN live demo, how-it-works,
+    why-not-a-global-decoder, pricing from `/billing/packs`, curl/Node/Python samples, FAQ).
+  - `/developers/docs`: render repo-root `API_REFERENCE.md` at build time (single source).
+  - Follow `web/DESIGN.md` tokens; no new design system. Needs `GET /dev/usage/summary`
+    (add to backend) + a canned-VIN demo route (server, per-IP limited, no credits).
+- [ ] **Step 2 — failure-registry tests (T13)**
+  - wallet race → never negative; no `specs` on 402; parse-only `charged:0`; 402≠429;
+    webhook replay is a no-op; promo double-redeem blocked; invalid VIN free.
+- [ ] **Step 3 — verify backend live**
+  - boot against a DB, smoke-test `/v1/decode` (miss/hit/402), key create+use, promo,
+    checkout stub. Hand off the interactive Chapa test-payment.
+- [ ] **Step 4 — wrap**
+  - update CLAUDE.md pointers if surface changed; final `claude.report.md`; push.

@@ -2,7 +2,7 @@ import { Router } from "express";
 import type { Request } from "express";
 import rateLimit from "express-rate-limit";
 import { requireAuth } from "../middleware/authMiddleware.ts";
-import { listKeys, createKey, deleteKey } from "../controllers/devPortalController.ts";
+import { listKeys, createKey, deleteKey, usageSummary, demoDecode, listDemoVins } from "../controllers/devPortalController.ts";
 import { listPacks, checkout, getPurchase, redeemPromo, billingHistory } from "../controllers/billingController.ts";
 
 // Blunt promo-code enumeration: 10 redeem attempts / 15 min per account.
@@ -21,6 +21,18 @@ const promoLimiter = rateLimit({
 // requireRole): being an API customer is orthogonal to M1/M2 contributor roles.
 const router = Router();
 
+// --- Landing-page live demo (PUBLIC, keyless, no credits) ---
+const demoLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  keyGenerator: (req: Request) => req.ip ?? "anon",
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many demo requests. Please slow down." },
+});
+router.get("/demo", demoLimiter, listDemoVins);
+router.get("/demo/:vin", demoLimiter, demoDecode);
+
 // --- API keys ---
 router.get("/keys", requireAuth, listKeys);
 router.post("/keys", requireAuth, createKey);
@@ -32,5 +44,8 @@ router.post("/billing/checkout", requireAuth, checkout);
 router.get("/billing/purchase/:txRef", requireAuth, getPurchase);
 router.post("/billing/promo", requireAuth, promoLimiter, redeemPromo);
 router.get("/billing/history", requireAuth, billingHistory);
+
+// --- Dashboard usage aggregates ---
+router.get("/usage/summary", requireAuth, usageSummary);
 
 export default router;

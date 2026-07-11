@@ -313,6 +313,93 @@ export const adminApi = {
   listFlags: () => api<DataFlag[]>("/api/v1/admin/flags", { cache: "no-store" } as RequestInit),
 };
 
+// --- M3 developer portal (session-authed) — API keys, usage, billing ---------
+
+export interface ApiKeyRow {
+  id: string;
+  name: string;
+  prefix: string;
+  last4: string;
+  status: "active" | "revoked";
+  rate_limit_per_min: number;
+  last_used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  revoked_at: string | null;
+}
+export interface CreatedKey {
+  id: string;
+  name: string;
+  key: string; // raw — shown ONCE
+  prefix: string;
+  last4: string;
+  rate_limit_per_min: number;
+  created_at: string;
+  signup_grant_credits: number;
+}
+export interface CreditPackRow {
+  pack_id: string;
+  credits: number;
+  price_etb: number;
+  note: string;
+}
+export interface PurchaseRow {
+  tx_ref: string;
+  pack_id: string;
+  credits: number;
+  amount_etb: string;
+  status: "pending" | "paid" | "failed";
+  created_at?: string;
+  paid_at: string | null;
+  balance?: number;
+}
+export interface UsageDay {
+  date: string;
+  decodes: number;
+  hits: number;
+  credits_spent: number;
+}
+export interface UsageSummary {
+  balance: number;
+  since: string;
+  days: UsageDay[];
+  totals: { decodes: number; hits: number; credits_spent: number; hit_ratio: number };
+}
+export interface BillingHistory {
+  balance: number;
+  purchases: PurchaseRow[];
+  promo_redemptions: Array<{ code: string; credited: number; created_at: string }>;
+  grants: Array<{ credits: number; kind: string; created_at: string }>;
+}
+
+export const devApi = {
+  listKeys: () => api<{ keys: ApiKeyRow[] }>("/api/v1/dev/keys", noStore),
+  createKey: (name: string) => api<CreatedKey>("/api/v1/dev/keys", { method: "POST", body: JSON.stringify({ name }) }),
+  revokeKey: (id: string) => api<{ id: string; status: string }>(`/api/v1/dev/keys/${id}`, { method: "DELETE" }),
+  usageSummary: () => api<UsageSummary>("/api/v1/dev/usage/summary", noStore),
+  packs: () => api<{ currency: string; packs: CreditPackRow[] }>("/api/v1/dev/billing/packs", noStore),
+  checkout: (packId: string) => api<{ checkout_url: string; tx_ref: string }>("/api/v1/dev/billing/checkout", { method: "POST", body: JSON.stringify({ packId }) }),
+  purchase: (txRef: string) => api<PurchaseRow>(`/api/v1/dev/billing/purchase/${encodeURIComponent(txRef)}`, noStore),
+  redeemPromo: (code: string) => api<{ credited: number; balance: number; code: string }>("/api/v1/dev/billing/promo", { method: "POST", body: JSON.stringify({ code }) }),
+  history: () => api<BillingHistory>("/api/v1/dev/billing/history", noStore),
+};
+
+// --- M3 landing-page live demo (public, keyless) -----------------------------
+
+export interface DemoDecode {
+  vin: string;
+  valid: boolean;
+  match: "exact" | "model" | "none";
+  parsed: { wmi: string; vds: string; vis: string; plant_code: string; model_year: number | null; country: string | null; manufacturer: string | null };
+  vehicle: { make: string | null; model: string | null; year: number | null; image_url: string | null } | null;
+  specs: Record<string, unknown> | null;
+  demo: true;
+}
+export const demoApi = {
+  vins: () => api<{ vins: string[] }>("/api/v1/dev/demo", noStore),
+  decode: (vin: string) => api<DemoDecode>(`/api/v1/dev/demo/${encodeURIComponent(vin)}`, noStore),
+};
+
 // --- Spec conflicts (super_admin) — raw joined rows from /vin/conflicts -------
 
 export interface ConflictRow {

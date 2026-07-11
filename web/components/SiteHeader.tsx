@@ -16,6 +16,9 @@ export default function SiteHeader() {
           <Link href="/#pricing" className="hidden text-body text-fg-muted transition-colors hover:text-fg sm:inline">
             Pricing
           </Link>
+          <Link href="/developers" className="hidden text-body text-fg-muted transition-colors hover:text-fg sm:inline">
+            Developers
+          </Link>
           <AuthNav />
         </nav>
       </div>
