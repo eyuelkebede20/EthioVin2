@@ -133,9 +133,14 @@ export const usageSummary = async (req: Request, res: Response) => {
 };
 
 // A small, fixed set of sample VINs for the landing-page live demo. Canned-only so
-// there's nothing for scrapers to farm and no AI/Serper cost. Swap these for real
-// already-cached VINs from the seeded DB before launch.
-const DEMO_VINS = ["LGXC16CF0N0000001", "JHMGE8H50DC000001", "MMBJNKA10JH000001"];
+// there's nothing for scrapers to farm and no AI/Serper cost. These are real VINs
+// already recorded in the ledger (they return live "exact" data).
+const DEMO_VINS = [
+  "LCCE4CB7S45208105", // BYD YUAN (2025)
+  "MBHZF6C17PG327826", // SUZUKI (2023)
+  "LZZ5ELND3SD379138", // SINOTRUK HOWO (2025)
+  "LC0C76C47S4523575", // BYD hybrid (2025)
+];
 
 // GET /api/v1/dev/demo/:vin — PUBLIC, keyless, no credits. Decodes only the canned
 // sample VINs and returns the public /v1 envelope shape (minus credits). Per-IP limited.
