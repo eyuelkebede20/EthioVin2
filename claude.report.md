@@ -141,13 +141,30 @@ same Postgres, same `web/`; **one shared credit balance** with M2 (no second wal
   (by id/email), key-limit override — all audit-logged, super_admin.
 - **T14 (partial):** `DB_POOL_MAX` (default 5) pool bump; `npm run logs:prune` (180-day retention).
 
-## Not yet built (next phase)
-- **T10–T12 `web/`:** developer dashboard (`/dashboard/api` — keys/usage/billing), landing page
-  (`/developers` + canned-VIN live demo), docs page (`/developers/docs` from `API_REFERENCE.md`).
-- **T13 tests:** failure-registry assertions (wallet race, no-paid-data-on-402, parse-only free,
-  402≠429, webhook replay, promo race).
-- **T14 launch:** run `m3.sql` on prod, set `CHAPA_*`/`PUBLIC_API_BASE_URL`, pin Passenger to 1
-  instance, cron the prune job, seed a launch promo, smoke-test a real Chapa test payment.
+## Shipped — web portal + tests + live verify (T10–T13)
+
+- **T10–T12 `web/`** (`tsc` + `next build` clean, 21 routes): `/dashboard/api` (Keys tab with
+  show-once key + copy + warning + revoke; Usage tab stat tiles + daily bar chart; Billing tab
+  balance + packs→Chapa + promo redeem + Chapa-return poll + history), `/developers` landing
+  (hero, canned-VIN live demo, how-it-works, why-not-global, pricing from `/billing/packs`,
+  curl/Node/Python samples, use cases, FAQ), `/developers/docs` (renders repo-root
+  `API_REFERENCE.md` via a prebuild copy step — single source, no forked JSX). Backend added
+  `GET /dev/usage/summary` + keyless `GET /dev/demo/:vin`.
+- **T13 tests** (`npm test`, node:test via tsx): DB-free unit suite (key format+hash, webhook
+  HMAC verify, promo non-ambiguous codes, pricing, ids, parseVin I/O/Q) — 7 pass; DB-integration
+  suite (wallet race → never negative, guarded charge law, hasGrantRef) behind `RUN_DB_TESTS=1`.
+- **Live verify (read-only, cPanel DB):** booted the API, caught + fixed a runtime-only bug
+  (`ERR_ERL_KEY_GEN_IPV6` → `ipKeyGenerator`), confirmed `/v1/health`, the keyless 401 public
+  envelope, and a correct live `/dev/demo/:vin` envelope end-to-end.
+
+## Remaining handoffs (need real creds / would write to prod)
+- **T14 launch:** run `m3.sql` on prod, set `CHAPA_SECRET_KEY`/`CHAPA_WEBHOOK_SECRET`/
+  `PUBLIC_API_BASE_URL`, pin Passenger to 1 instance (or add a Redis limiter store), cron
+  `npm run logs:prune`, seed a launch promo, and add `web/` to the CI/deploy pipeline.
+- **Interactive smoke test:** create a key → charged decode → 402-on-empty, and a real Chapa
+  test-mode payment through checkout → webhook. Run `RUN_DB_TESTS=1 npm test` on a throwaway DB.
+- **Pricing sign-off:** the pack prices + 25-credit signup grant in `lib/pricing.ts` are placeholders.
+- **Demo VINs:** swap the 3 canned sample VINs in `devPortalController` for real already-cached ones.
 
 ## New env vars (backend/.env)
 `CHAPA_SECRET_KEY`, `CHAPA_WEBHOOK_SECRET`, `PUBLIC_API_BASE_URL` (see `claude.milestone3.md` §11);

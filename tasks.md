@@ -205,5 +205,6 @@ Backend `/v1` API platform (T1–T9 + T14 partial) is DONE, typechecks + bundles
   wmi_mapping make resolution end-to-end); `/dev/billing/*` → 401 (session-gated). No writes made.
   HANDOFF (needs real creds / would write to prod): key create → charged decode → 402 path;
   Chapa checkout + webhook. Run `RUN_DB_TESTS=1 npm test` against a throwaway DB for the money tests.
-- [ ] **Step 4 — wrap**
-  - update CLAUDE.md pointers if surface changed; final `claude.report.md`; push.
+- [x] **Step 4 — wrap** — DONE. CLAUDE.md M3 section: corrected branch (built on milestone-2) +
+  shipped-status/surface summary. claude.report.md: T10–T13 shipped + remaining handoffs
+  (T14 launch, interactive Chapa/charge smoke test, pricing sign-off, real demo VINs). Pushed.

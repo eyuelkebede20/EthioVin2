@@ -462,7 +462,14 @@ system, and stubs/handoffs. Read that file before touching M2 code. See also the
 
 ---
 
-## Milestone 3 — the public API platform (branch `milestone-3`)
+## Milestone 3 — the public API platform (built on branch `milestone-2`)
+
+**Status:** backend `/v1` API platform + `web/` developer portal are **shipped** (T1–T13; see
+`claude.report.md` for the per-task rundown and the launch/handoff checklist). Concrete surface:
+public `/v1` (`decode`/`account`/`usage`/`health`, `decode/batch` a 501 stub), portal
+`/api/v1/dev/*` (keys, `billing/*`, `usage/summary`, keyless `demo/:vin`), admin promo/grant/
+key-limit on `/api/v1/admin/*`, and `web/` pages `/developers`, `/developers/docs`,
+`/dashboard/api`. Schema applied via `backend/src/db/m3.sql` (idempotent) or migration `0004`.
 
 M3 turns the decode engine into a standalone, sellable developer product: keyed access to a
 public **`POST /v1/decode`**, prepaid **credit metering** (1 credit = one decode that returns
