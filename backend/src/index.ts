@@ -10,6 +10,8 @@ import garageRoutes from "./routes/garageRoutes.ts";
 import insuranceRoutes from "./routes/insuranceRoutes.ts";
 import paymentRoutes from "./routes/paymentRoutes.ts";
 import publicRoutes from "./routes/publicRoutes.ts";
+import devPortalRoutes from "./routes/devPortalRoutes.ts";
+import { chapaWebhook } from "./controllers/billingController.ts";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
 import { attachUser, requireRole, requireOrg } from "./middleware/authMiddleware.ts";
@@ -90,6 +92,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// Chapa webhook: the signature is an HMAC over the RAW payload, so this ONE route
+// is registered BEFORE express.json() with a raw-body parser (same family as the
+// better-auth handler above). It is unauthenticated (signature-verified) and lives
+// outside the session-gated dev router by design.
+app.post("/api/v1/dev/billing/webhook", express.raw({ type: "*/*" }), chapaWebhook);
+
 app.use(express.json({ limit: "100kb" }));
 
 // Public keyed API (/v1). Mounted BEFORE attachUser: /v1 uses API keys, never
@@ -104,6 +112,10 @@ app.use(attachUser);
 const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
 
 app.use("/api/v1/vin", apiLimiter, vinRoutes);
+
+// Developer portal (session-authed, per-route). The Chapa webhook is NOT here — it's
+// registered above, before the JSON parser.
+app.use("/api/v1/dev", apiLimiter, devPortalRoutes);
 
 // Public decode funnel: GET /api/v1/decode/:vin is intentionally un-authed (free
 // tier). attachUser still ran, so a logged-in premium user's /full sub-route can
