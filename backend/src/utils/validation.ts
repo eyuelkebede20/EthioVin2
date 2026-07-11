@@ -315,6 +315,27 @@ export const updateKeyLimitSchema = z.object({
   rateLimitPerMin: z.coerce.number().int().min(1).max(100_000),
 });
 
+// Admin: edit credit-pack pricing + the free signup grant (stored in app_settings).
+export const updatePricingSchema = z.object({
+  packs: z
+    .array(
+      z.object({
+        packId: z
+          .string()
+          .trim()
+          .min(1)
+          .max(32)
+          .regex(/^[a-z0-9_-]+$/i, "packId may only contain letters, numbers, - and _"),
+        credits: z.coerce.number().int().positive().max(10_000_000),
+        priceEtb: z.coerce.number().nonnegative().max(100_000_000),
+        note: z.string().trim().max(100).default(""),
+      }),
+    )
+    .min(1)
+    .max(12),
+  signupGrantCredits: z.coerce.number().int().nonnegative().max(10_000_000),
+});
+
 // GET /v1/usage query range. Dates as YYYY-MM-DD strings; range bounded in the controller.
 export const usageRangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "from must be YYYY-MM-DD").optional(),

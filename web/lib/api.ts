@@ -323,7 +323,20 @@ export const adminApi = {
   createPromo: (body: { code?: string; credits: number; maxRedemptions?: number; perAccountLimit?: number; expiresAt?: string; note?: string }) =>
     api<PromoRow>("/api/v1/admin/promo", { method: "POST", body: JSON.stringify(body) }),
   updatePromo: (id: string, status: "active" | "disabled") => api<PromoRow>(`/api/v1/admin/promo/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  getPricing: () => api<AdminPricing>("/api/v1/admin/pricing", noStore),
+  updatePricing: (body: AdminPricing) => api<AdminPricing>("/api/v1/admin/pricing", { method: "PATCH", body: JSON.stringify(body) }),
 };
+
+export interface AdminCreditPack {
+  packId: string;
+  credits: number;
+  priceEtb: number;
+  note: string;
+}
+export interface AdminPricing {
+  packs: AdminCreditPack[];
+  signupGrantCredits: number;
+}
 
 export interface CreditLedgerEntry {
   delta: number;

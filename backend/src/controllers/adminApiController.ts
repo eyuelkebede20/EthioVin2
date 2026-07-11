@@ -6,7 +6,8 @@ import { AppError } from "../middleware/errorHandler.ts";
 import { writeAudit } from "../middleware/audit.ts";
 import * as creditBridge from "../services/creditBridge.ts";
 import { generatePromoCode } from "../services/promoService.ts";
-import { createPromoSchema, adminGrantSchema, updateKeyLimitSchema } from "../utils/validation.ts";
+import { getPricingConfig, setPricingConfig } from "../services/pricingService.ts";
+import { createPromoSchema, adminGrantSchema, updateKeyLimitSchema, updatePricingSchema } from "../utils/validation.ts";
 import { nano } from "../utils/id.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -117,6 +118,22 @@ export const grantCredits = async (req: Request, res: Response) => {
 
   await writeAudit(req, { action: "credits.grant", resourceType: "user", resourceId: targetId, metadata: { amount, note: note ?? null, ref } });
   return res.json({ ownerId: targetId, granted: amount, balance });
+};
+
+// GET /api/v1/admin/pricing — current credit packs + signup grant (editable).
+export const getPricing = async (_req: Request, res: Response) => {
+  return res.json(await getPricingConfig());
+};
+
+// PATCH /api/v1/admin/pricing — replace the packs + signup grant (stored in app_settings).
+export const updatePricing = async (req: Request, res: Response) => {
+  const cfg = updatePricingSchema.parse(req.body);
+  const ids = new Set(cfg.packs.map((p) => p.packId));
+  if (ids.size !== cfg.packs.length) throw new AppError(400, "Pack ids must be unique");
+
+  await setPricingConfig(cfg);
+  await writeAudit(req, { action: "pricing.update", resourceType: "settings", resourceId: "pricing", metadata: { packs: cfg.packs.length, signupGrantCredits: cfg.signupGrantCredits } });
+  return res.json(cfg);
 };
 
 // PATCH /api/v1/admin/api-keys/:id/limit { rateLimitPerMin } — enterprise override.

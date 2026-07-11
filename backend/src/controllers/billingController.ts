@@ -7,14 +7,17 @@ import * as creditBridge from "../services/creditBridge.ts";
 import { chapaConfigured, initializePayment, verifyPayment, verifyWebhookSignature } from "../services/chapaService.ts";
 import { redeemPromo as redeemPromoService, PromoError } from "../services/promoService.ts";
 import { checkoutSchema, promoRedeemSchema } from "../utils/validation.ts";
-import { CREDIT_PACKS, getPack, PAID_RATE_LIMIT_PER_MIN } from "../lib/pricing.ts";
+import { PAID_RATE_LIMIT_PER_MIN } from "../lib/pricing.ts";
+import { getPricingConfig, getPackById } from "../services/pricingService.ts";
 import { nano } from "../utils/id.ts";
 
-// GET /billing/packs — the single pricing source (never hardcoded in web/).
+// GET /billing/packs — the single pricing source (never hardcoded in web/). Reads the
+// runtime-editable pricing (app_settings), falling back to code defaults.
 export const listPacks = async (_req: Request, res: Response) => {
+  const { packs } = await getPricingConfig();
   return res.json({
     currency: "ETB",
-    packs: CREDIT_PACKS.map((p) => ({ pack_id: p.packId, credits: p.credits, price_etb: p.priceEtb, note: p.note })),
+    packs: packs.map((p) => ({ pack_id: p.packId, credits: p.credits, price_etb: p.priceEtb, note: p.note })),
   });
 };
 
@@ -23,7 +26,7 @@ export const checkout = async (req: Request, res: Response) => {
   if (!chapaConfigured()) throw new AppError(503, "Billing is not configured.");
   const ownerId = req.user!.id;
   const { packId } = checkoutSchema.parse(req.body);
-  const pack = getPack(packId);
+  const pack = await getPackById(packId);
   if (!pack) throw new AppError(400, "Unknown credit pack.");
 
   const txRef = "evnp_" + nano(24);

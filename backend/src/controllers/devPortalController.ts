@@ -8,7 +8,8 @@ import * as creditBridge from "../services/creditBridge.ts";
 import { resolveVehicle } from "./decodeController.ts";
 import { parseVin } from "../utils/vin.ts";
 import { createKeySchema } from "../utils/validation.ts";
-import { SIGNUP_GRANT_CREDITS, FREE_RATE_LIMIT_PER_MIN, PAID_RATE_LIMIT_PER_MIN } from "../lib/pricing.ts";
+import { FREE_RATE_LIMIT_PER_MIN, PAID_RATE_LIMIT_PER_MIN } from "../lib/pricing.ts";
+import { getSignupGrantCredits } from "../services/pricingService.ts";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -65,8 +66,11 @@ export const createKey = async (req: Request, res: Response) => {
     const ref = "signup:" + ownerId;
     if (!(await creditBridge.hasGrantRef(ownerId, ref))) {
       try {
-        await creditBridge.grant({ ownerId, amount: SIGNUP_GRANT_CREDITS, source: "signup_grant", ref });
-        grantedCredits = SIGNUP_GRANT_CREDITS;
+        const grantSize = await getSignupGrantCredits();
+        if (grantSize > 0) {
+          await creditBridge.grant({ ownerId, amount: grantSize, source: "signup_grant", ref });
+          grantedCredits = grantSize;
+        }
       } catch (err) {
         console.error(`[dev] signup grant failed for ${ownerId}:`, err);
       }
@@ -169,7 +173,14 @@ export const demoDecode = async (req: Request, res: Response) => {
     vehicle:
       match === "none"
         ? null
-        : { make: identity.manufacturer ?? null, model: identity.model ?? null, year: modelYear, image_url: identity.image_url ?? null },
+        : {
+            make: identity.manufacturer ?? null,
+            model: identity.model ?? null,
+            // Prefer the recorded (per-VIN, human-verified) year over the VIN's
+            // position-10 heuristic — matches the real /v1/decode envelope.
+            year: identity.year && /^\d{4}$/.test(identity.year) ? Number(identity.year) : modelYear,
+            image_url: identity.image_url ?? null,
+          },
     specs: match === "none" ? null : specs ?? null,
     demo: true,
   });

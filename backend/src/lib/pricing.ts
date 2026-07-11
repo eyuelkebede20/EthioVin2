@@ -26,3 +26,16 @@ export const CREDIT_PACKS: CreditPack[] = [
 export function getPack(packId: string): CreditPack | undefined {
   return CREDIT_PACKS.find((p) => p.packId === packId);
 }
+
+// The editable pricing shape. The DEFAULTS below are the fallback when a super_admin
+// hasn't overridden pricing in app_settings (see services/pricingService.ts) — so a
+// fresh DB just works, and prices/grant are adjustable at runtime with no code change.
+export interface PricingConfig {
+  packs: CreditPack[];
+  signupGrantCredits: number;
+}
+
+export const DEFAULT_PRICING: PricingConfig = {
+  packs: CREDIT_PACKS,
+  signupGrantCredits: SIGNUP_GRANT_CREDITS,
+};
