@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { desc, eq } from "drizzle-orm";
 import { db } from "../db/index.ts";
-import { apiKey, promoCode, user } from "../db/schema.ts";
+import { apiKey, credit_ledger, promoCode, user } from "../db/schema.ts";
 import { AppError } from "../middleware/errorHandler.ts";
 import { writeAudit } from "../middleware/audit.ts";
 import * as creditBridge from "../services/creditBridge.ts";
@@ -69,6 +69,35 @@ export const updatePromo = async (req: Request, res: Response) => {
 
   await writeAudit(req, { action: "promo.update", resourceType: "promo_code", resourceId: id, metadata: { status } });
   return res.json(row);
+};
+
+// GET /api/v1/admin/credits/lookup?email=|ownerId= — resolve a user + current
+// balance + recent ledger activity, so the admin can confirm the target before granting.
+export const lookupUserCredits = async (req: Request, res: Response) => {
+  const email = typeof req.query.email === "string" ? req.query.email.trim() : "";
+  const ownerId = typeof req.query.ownerId === "string" ? req.query.ownerId.trim() : "";
+  if (!email && !ownerId) throw new AppError(400, "email or ownerId is required");
+
+  const [u] = await db
+    .select({ id: user.id, email: user.email, name: user.name })
+    .from(user)
+    .where(ownerId ? eq(user.id, ownerId) : eq(user.email, email))
+    .limit(1);
+  if (!u) throw new AppError(404, "No user with that email or id");
+
+  const balance = await creditBridge.balance(u.id);
+  const recent = await db
+    .select({ delta: credit_ledger.delta, reason: credit_ledger.reason, eventId: credit_ledger.eventId, balanceAfter: credit_ledger.balanceAfter, createdAt: credit_ledger.createdAt })
+    .from(credit_ledger)
+    .where(eq(credit_ledger.userId, u.id))
+    .orderBy(desc(credit_ledger.createdAt))
+    .limit(20);
+
+  return res.json({
+    user: u,
+    balance,
+    recent: recent.map((r) => ({ delta: Number(r.delta), reason: r.reason, ref: r.eventId, balance_after: Number(r.balanceAfter), created_at: r.createdAt })),
+  });
 };
 
 // POST /api/v1/admin/credits/grant { ownerId | email, amount, note } — manual grant.

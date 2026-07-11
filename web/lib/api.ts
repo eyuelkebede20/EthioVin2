@@ -311,7 +311,45 @@ export const adminApi = {
   revokeAgreement: (id: string) => api<{ success: boolean }>(`/api/v1/admin/agreements/${id}/revoke`, { method: "PATCH" }),
   listContributors: () => api<Contributor[]>("/api/v1/admin/contributors", { cache: "no-store" } as RequestInit),
   listFlags: () => api<DataFlag[]>("/api/v1/admin/flags", { cache: "no-store" } as RequestInit),
+
+  // --- M3 credit + promo management (super_admin) ---
+  lookupCredits: (q: { email?: string; ownerId?: string }) => {
+    const qs = new URLSearchParams(q.ownerId ? { ownerId: q.ownerId } : { email: q.email ?? "" }).toString();
+    return api<CreditLookup>(`/api/v1/admin/credits/lookup?${qs}`, noStore);
+  },
+  grantCredits: (body: { email?: string; ownerId?: string; amount: number; note?: string }) =>
+    api<{ ownerId: string; granted: number; balance: number }>("/api/v1/admin/credits/grant", { method: "POST", body: JSON.stringify(body) }),
+  listPromos: () => api<{ promos: PromoRow[] }>("/api/v1/admin/promo", noStore),
+  createPromo: (body: { code?: string; credits: number; maxRedemptions?: number; perAccountLimit?: number; expiresAt?: string; note?: string }) =>
+    api<PromoRow>("/api/v1/admin/promo", { method: "POST", body: JSON.stringify(body) }),
+  updatePromo: (id: string, status: "active" | "disabled") => api<PromoRow>(`/api/v1/admin/promo/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
 };
+
+export interface CreditLedgerEntry {
+  delta: number;
+  reason: string;
+  ref: string | null;
+  balance_after: number;
+  created_at: string;
+}
+export interface CreditLookup {
+  user: { id: string; email: string; name: string };
+  balance: number;
+  recent: CreditLedgerEntry[];
+}
+export interface PromoRow {
+  id: string;
+  code: string;
+  credits: number;
+  maxRedemptions: number | null;
+  redeemedCount: number;
+  perAccountLimit: number;
+  startsAt: string | null;
+  expiresAt: string | null;
+  status: "active" | "disabled";
+  note: string | null;
+  createdAt: string;
+}
 
 // --- M3 developer portal (session-authed) — API keys, usage, billing ---------
 

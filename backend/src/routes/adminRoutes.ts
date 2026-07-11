@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireRole } from "../middleware/authMiddleware.ts";
 import { getUnknownWMIs, updateWMI, getDistinctManufacturers, createOrg, listOrgs, getOrgDetail, addOrgMember, createAgreement, revokeAgreement, getAnalytics, listContributors, listFlags, getSettings, updateSettings } from "../controllers/adminController.ts";
-import { createPromo, listPromos, updatePromo, grantCredits, updateKeyLimit } from "../controllers/adminApiController.ts";
+import { createPromo, listPromos, updatePromo, grantCredits, updateKeyLimit, lookupUserCredits } from "../controllers/adminApiController.ts";
 
 const router = Router();
 
@@ -29,6 +29,7 @@ router.patch("/settings", requireRole("super_admin"), updateSettings);
 router.post("/promo", requireRole("super_admin"), createPromo);
 router.get("/promo", requireRole("super_admin"), listPromos);
 router.patch("/promo/:id", requireRole("super_admin"), updatePromo);
+router.get("/credits/lookup", requireRole("super_admin"), lookupUserCredits);
 router.post("/credits/grant", requireRole("super_admin"), grantCredits);
 router.patch("/api-keys/:id/limit", requireRole("super_admin"), updateKeyLimit);
 

@@ -18,5 +18,6 @@ export const ADMIN_NAV: NavItem[] = [
   { href: "/admin/orgs", label: "Organizations" },
   { href: "/admin/trust", label: "Trust & Fraud" },
   { href: "/admin/conflicts", label: "Conflicts" },
+  { href: "/admin/credits", label: "Credits" },
   { href: "/admin/settings", label: "Settings" },
 ];
