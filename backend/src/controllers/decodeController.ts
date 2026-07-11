@@ -10,13 +10,16 @@ import { writeAudit } from "../middleware/audit.ts";
 // on the SERVER via parseVin (never trusting client values). Mirrors processVin's
 // lookup order: exact ledger row → DNA cache (with a sibling for make/model/image)
 // → decoded-basics-only on a miss.
-export async function resolveVehicle(rawVin: string): Promise<{ identity: VehicleIdentity; specs: Record<string, unknown> | null }> {
+export type DecodeMatch = "exact" | "model" | "none";
+
+export async function resolveVehicle(rawVin: string): Promise<{ match: DecodeMatch; identity: VehicleIdentity; specs: Record<string, unknown> | null }> {
   const { keyVin, wmi, vds_code, year, vis } = parseVin(rawVin);
 
   // 1. Exact VIN already recorded.
   const [ledger] = await db.select().from(vehicle_ledger).where(eq(vehicle_ledger.vin, keyVin)).limit(1);
   if (ledger) {
     return {
+      match: "exact",
       identity: {
         vin: ledger.vin,
         manufacturer: ledger.manufacturer,
@@ -52,6 +55,7 @@ export async function resolveVehicle(rawVin: string): Promise<{ identity: Vehicl
       .orderBy(sql`(${vehicle_ledger.image_url} is not null and ${vehicle_ledger.image_url} <> '') desc`, desc(vehicle_ledger.updatedAt))
       .limit(1);
     return {
+      match: "model",
       identity: {
         vin: keyVin,
         manufacturer: sibling?.manufacturer ?? predictedMake,
@@ -69,6 +73,7 @@ export async function resolveVehicle(rawVin: string): Promise<{ identity: Vehicl
 
   // 3. Miss — return the decoded basics we can derive from the VIN itself.
   return {
+    match: "none",
     identity: { vin: keyVin, manufacturer: predictedMake, model: null, year, image_url: null, wmi, vds: vds_code, vis, country: null },
     specs: null,
   };

@@ -9,6 +9,7 @@ import decodeRoutes from "./routes/decodeRoutes.ts";
 import garageRoutes from "./routes/garageRoutes.ts";
 import insuranceRoutes from "./routes/insuranceRoutes.ts";
 import paymentRoutes from "./routes/paymentRoutes.ts";
+import publicRoutes from "./routes/publicRoutes.ts";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
 import { attachUser, requireRole, requireOrg } from "./middleware/authMiddleware.ts";
@@ -90,6 +91,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 app.use(express.json({ limit: "100kb" }));
+
+// Public keyed API (/v1). Mounted BEFORE attachUser: /v1 uses API keys, never
+// sessions — so it does no session work and the two identity channels stay
+// disjoint. It carries its OWN limiters + notFound/error envelope internally.
+app.use("/v1", publicRoutes);
 
 // Resolve the session once and hang the user on req.user for everyone downstream.
 app.use(attachUser);
