@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Request } from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { requireAuth } from "../middleware/authMiddleware.ts";
 import { listKeys, createKey, deleteKey, usageSummary, demoDecode, listDemoVins } from "../controllers/devPortalController.ts";
 import { listPacks, checkout, getPurchase, redeemPromo, billingHistory } from "../controllers/billingController.ts";
@@ -9,7 +9,8 @@ import { listPacks, checkout, getPurchase, redeemPromo, billingHistory } from ".
 const promoLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
-  keyGenerator: (req: Request) => req.user?.id ?? req.ip ?? "anon",
+  // Prefer the account id; fall back to a v6-safe IP key for unauthenticated hits.
+  keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? "0.0.0.0"),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many promo attempts. Please try again later." },
@@ -25,7 +26,7 @@ const router = Router();
 const demoLimiter = rateLimit({
   windowMs: 60_000,
   limit: 20,
-  keyGenerator: (req: Request) => req.ip ?? "anon",
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "0.0.0.0"),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many demo requests. Please slow down." },

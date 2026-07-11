@@ -197,8 +197,13 @@ Backend `/v1` API platform (T1–T9 + T14 partial) is DONE, typechecks + bundles
   behind `RUN_DB_TESTS=1` so they never touch the real cPanel DB by accident — 4 skipped here.
   - wallet race → never negative; no `specs` on 402; parse-only `charged:0`; 402≠429;
     webhook replay is a no-op; promo double-redeem blocked; invalid VIN free.
-- [ ] **Step 3 — verify backend live**
-  - boot against a DB, smoke-test `/v1/decode` (miss/hit/402), key create+use, promo,
-    checkout stub. Hand off the interactive Chapa test-payment.
+- [x] **Step 3 — verify backend live** — DONE (read-only smoke test against the cPanel DB).
+  Booted the server; found + fixed a real runtime-only bug typecheck missed: express-rate-limit
+  v8 rejects custom keyGenerators using `req.ip` (ERR_ERL_KEY_GEN_IPV6) — wrapped with
+  `ipKeyGenerator`. Verified: `/v1/health` ok; keyless `POST /v1/decode` → 401 public envelope;
+  live `GET /api/v1/dev/demo/:vin` returned a correct /v1 envelope (parseVin + decodeVinYear +
+  wmi_mapping make resolution end-to-end); `/dev/billing/*` → 401 (session-gated). No writes made.
+  HANDOFF (needs real creds / would write to prod): key create → charged decode → 402 path;
+  Chapa checkout + webhook. Run `RUN_DB_TESTS=1 npm test` against a throwaway DB for the money tests.
 - [ ] **Step 4 — wrap**
   - update CLAUDE.md pointers if surface changed; final `claude.report.md`; push.
