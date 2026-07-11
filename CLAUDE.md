@@ -16,6 +16,8 @@ Working detail lives in dedicated chapters so this file stays uncluttered:
 | `claude.milestone2.md` | **M2 detail** — new tables/middleware/services/routes, the `web/` Next.js app + design system, stubs/handoffs. Read before touching M2 code. |
 | `MILESTONE_2_PLAN.md` | The M2 CEO plan + 11-section review (architecture, security, sequencing, failure registry). |
 | `claude.report.md` | M2 progress report — what shipped, what's stubbed, the handoffs. |
+| `claude.milestone3.md` | **M3 detail** — the public API platform: API keys, credit metering, Chapa billing, promo codes, the `/v1` contract, landing page + developer dashboard. Read before touching M3 code. |
+| `API_REFERENCE.md` | The public, developer-facing `/v1` contract (auth, endpoints, errors, credits). Single source for the portal docs page — change it before changing `/v1` code. |
 | `tasks.md` | Claude's working build journal / task notes (per-iteration progress, gotchas). Not formal docs. |
 | `web/DESIGN.md` | The `web/` design-system token reference. |
 
@@ -104,6 +106,8 @@ For an existing/production DB, prefer the idempotent `adjust.sql` or generated m
 - `FRONTEND_URL` — comma-separated allowed CORS origins / better-auth trusted origins (required; throws at boot if empty). Trailing slashes are stripped before matching.
 - `PORT` — server port (default 3000).
 
+M3 (the public API platform) adds Chapa + public-URL vars — see `claude.milestone3.md` §11.
+
 ---
 
 ## VIN parsing — THE most important convention
@@ -189,10 +193,14 @@ Three distinct shapes from `processVin`:
 Frontend render rule: `hit` → show specs/car; else `promptAdmin` → show form. Don't branch on
 the presence of `hardware_specs` or on `suggestedModels`.
 
+⚠️ These shapes are **internal-only**. The public M3 `/v1/decode` endpoint has its own flat,
+versioned envelope (`API_REFERENCE.md`) — never leak `hit`/`patientExists`/`promptAdmin` there.
+
 ## Backend API surface
 
 All app routes live under `/api/v1` and are gated by **our own** middleware (better-auth only
-guards `/api/auth/*`). Roles allowed are in parentheses.
+guards `/api/auth/*`). Roles allowed are in parentheses. (M3 adds the keyed public surface at
+`/v1` — the one deliberate exception to the `/api/*` rule; see the Milestone 3 section.)
 
 **Public (no auth):**
 
@@ -230,6 +238,8 @@ guards `/api/auth/*`). Roles allowed are in parentheses.
 - `express.json({ limit: "100kb" })`; the better-auth raw-body handler runs BEFORE `express.json()`.
   The auth handler matches `req.url === "/api/auth"` or the `"/api/auth/"` prefix (not a bare
   `startsWith("/api/auth")`, which would also catch unrelated paths like `/api/auth-status`).
+  (M3 adds a second raw-body route registered the same way: the Chapa webhook — see
+  `claude.milestone3.md` §7.)
 
 ### Dependency / vulnerability posture
 
@@ -279,6 +289,9 @@ guards `/api/auth/*`). Roles allowed are in parentheses.
     `UnknownVehicleNotice` on a miss and a read-only detail page — never a form that would 403.
   - `canVerify`'s role list MUST mirror the backend gates in `vinRoutes.ts`; if you change one,
     change both.
+- **M3 adds a second, disjoint identity channel:** API keys for `/v1` (hashed, resolved by
+  `requireApiKey`, identity = `req.apiKey.ownerId`). `/v1` never reads sessions; `/api/v1/dev/*`
+  never accepts API keys. Detail in `claude.milestone3.md` §4–§5.
 
 ---
 
@@ -366,6 +379,9 @@ guards `/api/auth/*`). Roles allowed are in parentheses.
   wmi/vds/vis/plant/country, `hardware_specs` jsonb, `scannedBy` FK → `user.id`, timestamps. ("Brain 1".)
 - better-auth tables: `user` (with custom `role` enum + ban fields), `session`, `account`, `verification`.
 
+M3 adds six additive tables (`api_key`, `api_request_log`, `api_idempotency`, `promo_code`,
+`promo_redemption`, `credit_purchase`) — full Drizzle definitions in `claude.milestone3.md` §3.
+
 ## AI spec drafts (`services/aiService.ts`)
 
 - Model `gemini-2.5-flash`, `temperature: 0.1`, `responseMimeType: "application/json"` with a
@@ -396,7 +412,9 @@ guards `/api/auth/*`). Roles allowed are in parentheses.
 - Wrap multi-step writes in `db.transaction`.
 - Validate every request body with a Zod schema from `utils/validation.ts`; throw `AppError`
   (or let Zod throw) and let the central `errorHandler` shape the response.
-- Keep error responses as `{ error: "..." }` with appropriate status codes.
+- Keep error responses as `{ error: "..." }` with appropriate status codes. (Exception: the M3
+  public `/v1` surface has its own structured envelope `{ error: { code, message } }` with a
+  router-level handler — the two shapes are separate frozen contracts; never merge them.)
 - On the client, surface errors via `<Banner variant="error">` and the `ApiError` message — never `alert()`.
 
 ## Debugging notes
@@ -441,3 +459,33 @@ Postgres + better-auth (extended, not rewritten).
 **The detail lives in `claude.milestone2.md`** — new tables, middleware (`requireOrg`/`requireTier`/
 `audit`), services (trust/credit/event-spine/decode/health/payment/settings), routes, the design
 system, and stubs/handoffs. Read that file before touching M2 code. See also the Documentation map below.
+
+---
+
+## Milestone 3 — the public API platform (branch `milestone-3`)
+
+M3 turns the decode engine into a standalone, sellable developer product: keyed access to a
+public **`POST /v1/decode`**, prepaid **credit metering** (1 credit = one decode that returns
+data; parse-only misses and invalid VINs are free), per-key rate limits, **Chapa checkout**
+(ETB) for credit packs, **promo codes**, and a developer **landing page + key/usage/billing
+dashboard in `web/`**. Same Express app, same Postgres, same monorepo — public routes mount at
+`/v1` (the one deliberate exception to the `/api/*` rule; host-agnostic, so an
+`api.ethiovin.com` subdomain can point at the same app later), portal routes at `/api/v1/dev/*`.
+
+Hard rules (the M3 equivalents of the auth conventions):
+
+- API keys are stored **hashed (SHA-256), shown once**, and looked up by hash. Never log a raw key.
+- **`/v1` never reads sessions; `/api/v1/dev/*` never accepts API keys** — two disjoint identity
+  channels. Charging identity is `req.apiKey.ownerId`, resolved server-side, never a header.
+- There is **ONE credit balance per account** — M3 spends/grants through the M2 ledger via
+  `services/creditBridge.ts`. Never create a second wallet store.
+- Only decodes that return data are charged, the charge is a guarded conditional decrement, and
+  **paid data is never returned on a failed charge**.
+- `/v1` responses are a **stable, versioned public contract** (`API_REFERENCE.md` is its source
+  of truth) — never leak the internal `/scan` shapes into it.
+
+**The detail lives in `claude.milestone3.md`** — new tables (`api_key`, `api_request_log`,
+`api_idempotency`, `promo_code`, `promo_redemption`, `credit_purchase` + idempotent `m3.sql`),
+the `/v1` pipeline and limiters, the charging law, Chapa webhook rules (raw-body + verify-API +
+replay guards), promo mechanics, portal/landing specs, the failure registry, and the T1–T14
+build order. Read that file before touching M3 code.
