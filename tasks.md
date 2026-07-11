@@ -191,7 +191,10 @@ Backend `/v1` API platform (T1–T9 + T14 partial) is DONE, typechecks + bundles
   - `/developers/docs`: render repo-root `API_REFERENCE.md` at build time (single source).
   - Follow `web/DESIGN.md` tokens; no new design system. Needs `GET /dev/usage/summary`
     (add to backend) + a canned-VIN demo route (server, per-IP limited, no credits).
-- [ ] **Step 2 — failure-registry tests (T13)**
+- [x] **Step 2 — failure-registry tests (T13)** — DONE. `npm test` (node:test via tsx):
+  unit suite (key format/hash, webhook HMAC verify, promo non-ambiguous codes, pricing, ids,
+  parseVin I/O/Q) 7 pass. DB-integration (wallet race → never negative, charge law, hasGrantRef)
+  behind `RUN_DB_TESTS=1` so they never touch the real cPanel DB by accident — 4 skipped here.
   - wallet race → never negative; no `specs` on 402; parse-only `charged:0`; 402≠429;
     webhook replay is a no-op; promo double-redeem blocked; invalid VIN free.
 - [ ] **Step 3 — verify backend live**
