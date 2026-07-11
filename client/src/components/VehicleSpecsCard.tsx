@@ -29,6 +29,7 @@ const CATEGORY_STYLES: Record<string, CategoryStyle> = {
   dimensions: { icon: Ruler, gradient: "from-amber-600 to-yellow-500", glow: "hover:shadow-amber-300/50", chip: "bg-amber-50", dot: "text-amber-600" },
   tiresandchassis: { icon: CircleDot, gradient: "from-rose-500 to-orange-500", glow: "hover:shadow-rose-300/50", chip: "bg-rose-50", dot: "text-rose-500" },
   classification: { icon: Tag, gradient: "from-orange-500 to-rose-500", glow: "hover:shadow-orange-300/50", chip: "bg-orange-50", dot: "text-orange-600" },
+  electricvehicle: { icon: Zap, gradient: "from-emerald-500 to-teal-500", glow: "hover:shadow-emerald-300/50", chip: "bg-emerald-50", dot: "text-emerald-600" },
   marketinformation: { icon: Tag, gradient: "from-yellow-500 to-amber-600", glow: "hover:shadow-yellow-300/50", chip: "bg-yellow-50", dot: "text-yellow-600" },
   // generic fall-backs
   safety: { icon: ShieldCheck, gradient: "from-orange-500 to-amber-500", glow: "hover:shadow-orange-300/50", chip: "bg-orange-50", dot: "text-orange-600" },

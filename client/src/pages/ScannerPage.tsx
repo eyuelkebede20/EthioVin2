@@ -2,14 +2,19 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Scanner from "../components/Scanner";
 import VerificationForm from "../components/VerificationForm";
+import UnknownVehicleNotice from "../components/UnknownVehicleNotice";
 import Banner from "../components/ui/Banner";
-import type { ScanResponse } from "../api/vinService";
+import { authClient } from "../lib/auth-client";
+import { canVerify } from "../lib/roles";
+import type { ScanResponse, ScanMiss } from "../api/vinService";
 
 type ScanWithVin = ScanResponse & { vin: string };
 
 export default function ScannerPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { data: session } = authClient.useSession();
+  const isVerifier = canVerify(session?.user?.role);
   // Allow the detail page to send the user back here to record an exact VIN whose
   // specs were matched only by WMI+VDS (a cache hit). ScannerPage mounts fresh on
   // that navigation, so reading it as the initial state is enough.
@@ -74,7 +79,8 @@ export default function ScannerPage() {
 
       {!scanResult ? (
         <Scanner onScanComplete={handleScanComplete} />
-      ) : (
+      ) : isVerifier ? (
+        // Verifier roles get the full add/verify form.
         <VerificationForm
           scanData={scanResult}
           onSuccess={() => {
@@ -83,6 +89,11 @@ export default function ScannerPage() {
           }}
           onCancel={() => setScanResult(null)}
         />
+      ) : (
+        // Read-only roles see a simple "not recorded yet" screen instead of a
+        // form whose actions are admin-only. scanResult is only ever set on a
+        // miss, so extractedData is always present here.
+        <UnknownVehicleNotice vin={scanResult.vin} extracted={(scanResult as ScanMiss & { vin: string }).extractedData} onScanAnother={() => setScanResult(null)} />
       )}
     </div>
   );

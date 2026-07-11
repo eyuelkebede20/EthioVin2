@@ -6,6 +6,8 @@ import SpecEditor, { type SpecDraft } from "../components/SpecEditor";
 import Banner from "../components/ui/Banner";
 import { saveToLedger, updateLedger, updateSpecs, type ScanResponse } from "../api/vinService";
 import { ApiError } from "../api/client";
+import { authClient } from "../lib/auth-client";
+import { canVerify } from "../lib/roles";
 
 interface VehicleView {
   vin?: string;
@@ -25,6 +27,8 @@ export default function HistoryPage() {
   const { vin } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { data: session } = authClient.useSession();
+  const isVerifier = canVerify(session?.user?.role);
 
   const state = location.state as { vehicleData?: VehicleView; fromCache?: boolean; scanResult?: ScanResponse & { vin: string } } | null;
   const vehicleData = state?.vehicleData;
@@ -67,7 +71,9 @@ export default function HistoryPage() {
       await updateSpecs({ wmi: vehicleData.wmi, vds_code: vehicleData.vds, hardware_specs: specDraft });
       const updated = { ...vehicleData, hardware_specs: specDraft };
       setEditingSpecs(false);
-      navigate(`/history/${vehicleData.vin}`, { replace: true, state: { vehicleData: updated } });
+      // Preserve the current view mode (cache hit vs ledger) and the scanResult so a
+      // cache-hit visitor can still "Record this VIN" after fixing the shared specs.
+      navigate(`/history/${vehicleData.vin}`, { replace: true, state: { vehicleData: updated, fromCache, scanResult } });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to save specifications.");
     } finally {
@@ -197,7 +203,7 @@ export default function HistoryPage() {
             </>
           ) : (
             <>
-              {!fromCache && (
+              {!fromCache && isVerifier && (
                 <button onClick={startEdit} className="border border-orange-300 text-orange-700 px-5 py-2 rounded-lg font-bold hover:bg-orange-50 transition">
                   Edit
                 </button>
@@ -228,7 +234,7 @@ export default function HistoryPage() {
                 . This exact VIN isn't recorded in the ledger yet.
               </Banner>
             </div>
-            {scanResult && (
+            {scanResult && isVerifier && (
               <div className="flex items-center gap-2">
                 <label className="text-sm font-bold text-slate-600">Year</label>
                 <select value={recordYear} onChange={(e) => setRecordYear(e.target.value)} className="p-2 border border-slate-300 rounded bg-white font-mono text-sm">
@@ -294,7 +300,9 @@ export default function HistoryPage() {
         <div className="lg:col-span-8">
           <div className="flex items-center justify-between mb-2 gap-3">
             <h2 className="text-2xl font-bold text-slate-800">Hardware Specifications</h2>
-            {!fromCache && !editing && (
+            {/* Shared specs are keyed by WMI+VDS, so a verifier can fix them whether this
+                exact VIN is recorded (ledger hit) or only matched by model (cache hit). */}
+            {!editing && isVerifier && (
               <div className="flex gap-2">
                 {editingSpecs ? (
                   <>

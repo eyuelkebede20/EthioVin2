@@ -1,0 +1,4 @@
+# Local reviewer tooling (Gemini code-review agent) — keep out of version control.
+GEMINI.md
+GEMINI.template.md
+REVIEW_LOG.md
