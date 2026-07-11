@@ -253,3 +253,70 @@ export const updateSettingsSchema = z
     paymentsEnabled: z.boolean().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, "No settings to update");
+
+// ---------------------------------------------------------------------------
+// Milestone 3 — public API platform (see claude.milestone3.md)
+// ---------------------------------------------------------------------------
+
+// Public POST /v1/decode body. Like scanSchema: a bounded plain string that
+// defers to parseVin() — NO I/O/Q rejection here (parseVin is the authority).
+export const publicDecodeSchema = z.object({ vin: z.string().min(1).max(40) });
+
+// Dev portal: create an API key. Name is a human label for the dashboard.
+export const createKeySchema = z.object({
+  name: z.string().trim().min(1).max(64),
+});
+
+// Dev portal: start a Chapa checkout for a credit pack. packId is validated
+// against lib/pricing.ts in the controller (not enumerated here).
+export const checkoutSchema = z.object({
+  packId: z.string().trim().min(1).max(32),
+});
+
+// Dev portal: redeem a promo code. Normalized (trim + UPPERCASE) so lookups match.
+export const promoRedeemSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(1)
+    .max(32)
+    .transform((s) => s.toUpperCase()),
+});
+
+// Admin: create a promo code. `code` optional — omitted => server-generated.
+export const createPromoSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(3)
+    .max(32)
+    .transform((s) => s.toUpperCase())
+    .optional(),
+  credits: z.coerce.number().int().positive().max(1_000_000),
+  maxRedemptions: z.coerce.number().int().positive().max(10_000_000).optional(),
+  perAccountLimit: z.coerce.number().int().positive().max(1000).optional(),
+  startsAt: z.coerce.date().optional(),
+  expiresAt: z.coerce.date().optional(),
+  note: z.string().trim().max(200).optional(),
+});
+
+// Admin: manual credit grant. Target by ownerId OR email (one required).
+export const adminGrantSchema = z
+  .object({
+    ownerId: z.string().trim().min(1).optional(),
+    email: z.string().trim().email().optional(),
+    amount: z.coerce.number().int().positive().max(10_000_000),
+    note: z.string().trim().max(200).optional(),
+  })
+  .refine((v) => !!(v.ownerId || v.email), "ownerId or email is required");
+
+// Admin: override a key's per-minute rate limit (enterprise deals).
+export const updateKeyLimitSchema = z.object({
+  rateLimitPerMin: z.coerce.number().int().min(1).max(100_000),
+});
+
+// GET /v1/usage query range. Dates as YYYY-MM-DD strings; range bounded in the controller.
+export const usageRangeSchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "from must be YYYY-MM-DD").optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "to must be YYYY-MM-DD").optional(),
+});

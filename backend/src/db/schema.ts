@@ -1,5 +1,5 @@
 // src/db/schema.ts  — corrected
-import { pgTable, jsonb, varchar, integer, numeric, primaryKey, index, pgEnum, timestamp, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, jsonb, varchar, integer, numeric, primaryKey, index, pgEnum, timestamp, foreignKey, uuid, bigserial, unique } from "drizzle-orm/pg-core";
 import { text, boolean } from "drizzle-orm/pg-core";
 
 export const statusEnum = pgEnum("status", ["pending", "verified", "rejected", "conflict"]);
@@ -510,3 +510,109 @@ export const field_claims = pgTable(
   },
   (t) => ({ vinFieldIdx: index("field_claims_vin_field_idx").on(t.vin, t.field) }),
 );
+
+// ===========================================================================
+// Milestone 3 — the public API platform (additive; see claude.milestone3.md §3)
+// Six new tables, zero changes to existing ones. Owner FKs are text -> user.id
+// (better-auth ids are text). There is deliberately NO wallet table here — the
+// ONE credit balance lives in credit_ledger and is reached through creditBridge.
+// ===========================================================================
+
+export const apiKeyStatusEnum = pgEnum("api_key_status", ["active", "revoked"]);
+export const apiRequestResultEnum = pgEnum("api_request_result", ["exact", "model", "parse_only", "invalid", "error"]);
+export const promoStatusEnum = pgEnum("promo_status", ["active", "disabled"]);
+export const purchaseStatusEnum = pgEnum("purchase_status", ["pending", "paid", "failed"]);
+
+// A developer's API key. The raw key is shown ONCE at creation; only its SHA-256
+// hex hash is stored (keyHash is the lookup column). keyPrefix/last4 are display-only.
+export const apiKey = pgTable("api_key", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerId: text("owner_id").notNull().references(() => user.id),
+  name: varchar("name", { length: 64 }).notNull(),
+  keyPrefix: varchar("key_prefix", { length: 16 }).notNull(),
+  keyHash: varchar("key_hash", { length: 64 }).notNull().unique(),
+  last4: varchar("last4", { length: 4 }).notNull(),
+  rateLimitPerMin: integer("rate_limit_per_min").notNull().default(10),
+  status: apiKeyStatusEnum("status").notNull().default("active"),
+  lastUsedAt: timestamp("last_used_at"),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+});
+
+// One row per public API request (incl. errors) — the billing-dispute record.
+export const apiRequestLog = pgTable(
+  "api_request_log",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    requestId: varchar("request_id", { length: 24 }).notNull(),
+    apiKeyId: uuid("api_key_id").notNull().references(() => apiKey.id),
+    endpoint: varchar("endpoint", { length: 64 }).notNull(),
+    vin: varchar("vin", { length: 17 }),
+    result: apiRequestResultEnum("result").notNull(),
+    creditsCharged: integer("credits_charged").notNull().default(0),
+    httpStatus: integer("http_status").notNull(),
+    latencyMs: integer("latency_ms"),
+    ip: varchar("ip", { length: 45 }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("idx_api_log_key_time").on(t.apiKeyId, t.createdAt)],
+);
+
+// Idempotency cache for POST /v1/decode (Idempotency-Key header). Same key+body ->
+// stored response replayed (no re-charge); same key/different body -> 409.
+export const apiIdempotency = pgTable(
+  "api_idempotency",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    apiKeyId: uuid("api_key_id").notNull().references(() => apiKey.id),
+    idemKey: varchar("idem_key", { length: 64 }).notNull(),
+    requestHash: varchar("request_hash", { length: 64 }).notNull(),
+    httpStatus: integer("http_status").notNull(),
+    response: jsonb("response").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [unique("uq_idem_key").on(t.apiKeyId, t.idemKey)],
+);
+
+// Promo codes granting credits (stored UPPERCASE). redeemedCount/perAccountLimit
+// bound redemption; the unique(promoCodeId, ownerId) on promo_redemption is the race guard.
+export const promoCode = pgTable("promo_code", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: varchar("code", { length: 32 }).notNull().unique(),
+  credits: integer("credits").notNull(),
+  maxRedemptions: integer("max_redemptions"),
+  redeemedCount: integer("redeemed_count").notNull().default(0),
+  perAccountLimit: integer("per_account_limit").notNull().default(1),
+  startsAt: timestamp("starts_at"),
+  expiresAt: timestamp("expires_at"),
+  status: promoStatusEnum("status").notNull().default("active"),
+  createdBy: text("created_by").references(() => user.id),
+  note: text("note"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const promoRedemption = pgTable(
+  "promo_redemption",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    promoCodeId: uuid("promo_code_id").notNull().references(() => promoCode.id),
+    ownerId: text("owner_id").notNull().references(() => user.id),
+    credited: integer("credited").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [unique("uq_promo_owner").on(t.promoCodeId, t.ownerId)],
+);
+
+// A Chapa credit-pack purchase. chapaTxRef is unique -> the webhook replay guard.
+export const creditPurchase = pgTable("credit_purchase", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerId: text("owner_id").notNull().references(() => user.id),
+  packId: varchar("pack_id", { length: 32 }).notNull(),
+  credits: integer("credits").notNull(),
+  amountEtb: numeric("amount_etb", { precision: 10, scale: 2 }).notNull(),
+  chapaTxRef: varchar("chapa_tx_ref", { length: 64 }).notNull().unique(),
+  status: purchaseStatusEnum("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  paidAt: timestamp("paid_at"),
+});
