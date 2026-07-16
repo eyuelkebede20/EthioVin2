@@ -1,0 +1,44 @@
+name: Deploy Client Only (frontend)
+
+# Ships ONLY the client/ SPA to ethiovin.senaycreatives.com
+# (/public_html/ethiovin/) — no backend, no web/ app. Used to publish the
+# public landing page from milestone-2 without a full main deploy (which would
+# also push the not-yet-migrated M2/M3 backend). Same build config + FTP secrets
+# as the frontend step in deploy.yml.
+on:
+  push:
+    branches:
+      - milestone-2
+    paths:
+      - "client/**"
+      - ".github/workflows/deploy-client.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy-client:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build Frontend
+        working-directory: ./client
+        env:
+          VITE_BACKEND_URL: https://ethiovinapi.senaycreatives.com
+        run: |
+          npm install
+          npm run build
+
+      - name: Deploy Frontend via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./client/dist/
+          server-dir: /public_html/ethiovin/
