@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { authClient } from "../lib/auth-client";
 import Banner from "../components/ui/Banner";
 
@@ -33,7 +34,7 @@ export default function LoginPage() {
         setError(error.message || "Authentication failed.");
         return;
       }
-      window.location.href = "/";
+      window.location.href = "/scan";
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -43,6 +44,9 @@ export default function LoginPage() {
 
   return (
     <div className="max-w-md mx-auto mt-20 p-6 bg-white rounded-xl shadow-md border border-slate-200">
+      <Link to="/" className="mb-4 inline-block text-sm font-semibold text-slate-500 hover:text-orange-600">
+        ← Back to home
+      </Link>
       <h2 className="text-2xl font-bold text-center mb-6">{isRegister ? "Create a New Account" : "Sign In to EthioVin"}</h2>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
