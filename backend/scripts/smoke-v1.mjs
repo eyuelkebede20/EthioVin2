@@ -1,0 +1,148 @@
+#!/usr/bin/env node
+// Post-deploy smoke test for the public /v1 API. Exercises the launch-critical
+// path end-to-end against a LIVE server (the report's "interactive smoke test"
+// handoff, scripted). Node 22+ (global fetch, ESM). No deps, no DB access.
+//
+//   BASE_URL=https://ethiovinapi.senaycreatives.com \
+//   API_KEY=evn_live_xxx \
+//   CACHED_VIN=LCO... \
+//   node scripts/smoke-v1.mjs
+//
+// BASE_URL      required — the API origin (no trailing /v1).
+// API_KEY       optional — a real evn_live_ key. Without it, only the keyless
+//               checks run (health + 401 envelope). WITH it, the charged decode
+//               runs and SPENDS 1 credit on a hit — use a throwaway/test key.
+// CACHED_VIN    optional — a VIN already in the ledger/cache (expects match!=none,
+//               charged:1). Get one from GET /api/v1/dev/demo. If omitted, the
+//               charged-hit assertion is skipped (only the free/invalid path runs).
+// INVALID_VIN   optional — defaults to "NOTAVALIDVIN0000" (expects valid:false, free).
+//
+// Exit code 0 = all run checks passed, 1 = a check failed. The 402 path (empty
+// balance) is NOT auto-run — it needs a zero-credit key; see the manual note printed
+// at the end.
+
+const BASE = (process.env.BASE_URL || "").replace(/\/+$/, "");
+const KEY = process.env.API_KEY || "";
+const CACHED_VIN = process.env.CACHED_VIN || "";
+const INVALID_VIN = process.env.INVALID_VIN || "NOTAVALIDVIN0000";
+
+if (!BASE) {
+  console.error("BASE_URL is required, e.g. BASE_URL=https://ethiovinapi.senaycreatives.com");
+  process.exit(2);
+}
+
+let passed = 0;
+let failed = 0;
+
+function ok(name, detail = "") {
+  passed++;
+  console.log(`  ✓ ${name}${detail ? ` — ${detail}` : ""}`);
+}
+function bad(name, detail = "") {
+  failed++;
+  console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
+}
+
+async function req(path, { method = "GET", key, body, idempotencyKey } = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (key) headers["Authorization"] = `Bearer ${key}`;
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let json = null;
+  try {
+    json = await res.json();
+  } catch {
+    /* non-JSON body */
+  }
+  return { status: res.status, json };
+}
+
+function isPublicErrorEnvelope(json) {
+  return json && json.error && typeof json.error.code === "string" && typeof json.error.message === "string";
+}
+
+async function main() {
+  console.log(`\nSmoke test — ${BASE}\n`);
+
+  // 1. Health (keyless, un-throttled).
+  {
+    const r = await req("/v1/health");
+    if (r.status === 200 && r.json && r.json.status === "ok") ok("GET /v1/health", "status:ok");
+    else bad("GET /v1/health", `got ${r.status} ${JSON.stringify(r.json)}`);
+  }
+
+  // 2. Keyless decode must be 401 with the PUBLIC envelope (never the internal shape).
+  {
+    const r = await req("/v1/decode", { method: "POST", body: { vin: INVALID_VIN } });
+    if (r.status === 401 && isPublicErrorEnvelope(r.json)) ok("POST /v1/decode (no key)", "401 public envelope");
+    else bad("POST /v1/decode (no key)", `expected 401 {error:{code,message}}, got ${r.status} ${JSON.stringify(r.json)}`);
+  }
+
+  if (!KEY) {
+    console.log("\n(no API_KEY set — skipping charged/account checks)\n");
+    return finish();
+  }
+
+  // 3. Account reachable with the key.
+  let startBalance = null;
+  {
+    const r = await req("/v1/account", { key: KEY });
+    if (r.status === 200 && r.json && typeof r.json.balance === "number") {
+      startBalance = r.json.balance;
+      ok("GET /v1/account", `balance:${startBalance}`);
+    } else bad("GET /v1/account", `got ${r.status} ${JSON.stringify(r.json)}`);
+  }
+
+  // 4. Invalid VIN decodes FREE (valid:false, charged:0) — the "never charge for we-don't-know" law.
+  {
+    const r = await req("/v1/decode", { key: KEY, method: "POST", body: { vin: INVALID_VIN } });
+    const charged = r.json?.credits?.charged;
+    if (r.status === 200 && r.json?.valid === false && charged === 0) ok("decode invalid VIN", "valid:false charged:0 (free)");
+    else bad("decode invalid VIN", `expected 200 valid:false charged:0, got ${r.status} ${JSON.stringify(r.json)}`);
+  }
+
+  // 5. Cached VIN decodes as a HIT and charges exactly 1 credit.
+  if (CACHED_VIN) {
+    const r = await req("/v1/decode", { key: KEY, method: "POST", body: { vin: CACHED_VIN } });
+    const charged = r.json?.credits?.charged;
+    const match = r.json?.match;
+    if (r.status === 200 && (match === "exact" || match === "model") && charged === 1 && r.json?.vehicle) {
+      ok("decode cached VIN", `match:${match} charged:1 balance:${r.json.credits.balance}`);
+      // Balance decremented by exactly 1 vs the account read.
+      if (startBalance != null && r.json.credits.balance === startBalance - 1) ok("balance decremented by 1", `${startBalance} → ${r.json.credits.balance}`);
+      else bad("balance decremented by 1", `start ${startBalance}, after ${r.json.credits.balance}`);
+
+      // 6. Idempotency: same key+body replays WITHOUT a second charge.
+      const idem = `smoke-${CACHED_VIN}-${startBalance}`;
+      const a = await req("/v1/decode", { key: KEY, method: "POST", body: { vin: CACHED_VIN }, idempotencyKey: idem });
+      const b = await req("/v1/decode", { key: KEY, method: "POST", body: { vin: CACHED_VIN }, idempotencyKey: idem });
+      if (a.status === 200 && b.status === 200 && a.json?.credits?.balance === b.json?.credits?.balance) ok("Idempotency-Key replay", `no second charge (balance stable at ${b.json.credits.balance})`);
+      else bad("Idempotency-Key replay", `balances ${a.json?.credits?.balance} vs ${b.json?.credits?.balance}`);
+    } else {
+      bad("decode cached VIN", `expected hit+charged:1, got ${r.status} match:${match} ${JSON.stringify(r.json?.credits)}`);
+    }
+  } else {
+    console.log("  – (no CACHED_VIN set — skipping the charged-hit + idempotency checks)");
+  }
+
+  finish();
+}
+
+function finish() {
+  console.log(`\n${passed} passed, ${failed} failed`);
+  console.log(
+    "\nNOT auto-tested (needs a zero-balance key): the 402 insufficient_credits path.\n" +
+      "Manually: drain a test key to 0 credits, decode a cached VIN, and confirm 402\n" +
+      "`insufficient_credits` with NO `specs`/`vehicle` in the body (paid data withheld on a failed charge).\n",
+  );
+  process.exit(failed > 0 ? 1 : 0);
+}
+
+main().catch((e) => {
+  console.error("\nSmoke test crashed:", e.message);
+  process.exit(1);
+});

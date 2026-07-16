@@ -208,3 +208,42 @@ Backend `/v1` API platform (T1–T9 + T14 partial) is DONE, typechecks + bundles
 - [x] **Step 4 — wrap** — DONE. CLAUDE.md M3 section: corrected branch (built on milestone-2) +
   shipped-status/surface summary. claude.report.md: T10–T13 shipped + remaining handoffs
   (T14 launch, interactive Chapa/charge smoke test, pricing sign-off, real demo VINs). Pushed.
+
+---
+
+## M3 LAUNCH plan (2026-07-16) — take the API live, one step at a time
+
+Everything M3 is code-complete on `milestone-2` but **nothing is in prod** (branch unmerged).
+Two post-report handoffs are already closed in code: **pricing is now runtime-editable**
+(`app_settings["pricing"]` via `services/pricingService.ts`, edited at `/admin/pricing` /
+`/admin/credits`), and the **landing demo VINs are real** (`GET /api/v1/dev/demo` pulls cached
+ledger rows). Rate-limiter decision: **keep the in-memory limiters** (no Redis) — they suit
+cPanel shared hosting; pin Passenger to a single instance so the per-process counters stay exact.
+
+Steps in order (☑ = done in-repo this session; ☐ = needs prod creds / your hands):
+
+- [x] **L0 — doc sync + tooling.** CLAUDE.md + claude.milestone3.md now describe runtime pricing,
+  the new `/admin/pricing`+`/admin/credits/lookup`+`/dev/demo` endpoints, and the closed handoffs.
+  Added `backend/scripts/smoke-v1.mjs` + `npm run smoke` (scripts the report's "interactive smoke
+  test": health → keyless 401 envelope → free invalid VIN → charged cached VIN → balance −1 →
+  idempotent replay; prints the manual 402 step it can't self-run).
+- [ ] **L1 — apply schema to prod.** `psql "$DATABASE_URL" -f backend/src/db/m3.sql` (idempotent;
+  M2's `m2.sql` first if that DB predates M2). Do NOT `db:push` against prod.
+- [ ] **L2 — set prod env** (`backend/.env`): `CHAPA_SECRET_KEY`, `CHAPA_WEBHOOK_SECRET`,
+  `PUBLIC_API_BASE_URL`, and `FRONTEND_URL` incl. the web origin. Missing Chapa vars → billing 503
+  (decode still works), so the API can go live before payments are wired.
+- [ ] **L3 — pin Passenger to 1 instance** (shared-hosting limiter accuracy). cPanel "Setup Node.js
+  App": startup file `dist/index.js`; if the plan allows it, set `PassengerMaxPoolSize 1` /
+  `PassengerMinInstances 1`. Leave `DB_POOL_MAX` default (5) — fine within shared-host conn caps.
+- [ ] **L4 — merge `milestone-2` → `main`** to fire CI (builds backend bundle + `web/` standalone,
+  FTP-deploys both). Review the diff first; M2+M3 are all additive.
+- [ ] **L5 — smoke test the live API.** Create a throwaway key in `/dashboard/api`, grab a demo VIN
+  from `GET /api/v1/dev/demo`, then `BASE_URL=… API_KEY=… CACHED_VIN=… npm run smoke`. Manually
+  confirm the 402 path (drain a key to 0 → decode → 402 with no `specs`). Also run
+  `RUN_DB_TESTS=1 npm test` against a throwaway DB for the wallet-race / charging-law suites.
+- [ ] **L6 — real Chapa test-mode payment** end-to-end: checkout → Chapa → webhook grants once →
+  balance rises; replay the webhook and confirm it's a no-op.
+- [ ] **L7 — ops:** cron `npm run logs:prune` (180-day retention); seed a launch promo via
+  `POST /api/v1/admin/promo`; confirm `/developers` renders live packs from `/billing/packs`.
+- [ ] **L8 (next feature, post-launch):** implement `POST /v1/decode/batch` (currently a 501 stub
+  with a frozen contract — up to 50 VINs, charged per VIN, partial results).

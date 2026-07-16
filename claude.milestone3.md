@@ -48,19 +48,25 @@ receipts/invoices, monthly free-credit refresh.
   trust rule: we never charge for "we don't know", and tests must assert it (§13).
 - **Prepaid only.** No negative balances, no post-pay. Insufficient balance →
   `402 insufficient_credits` (never `429` — that's reserved for rate limiting).
-- **Free evaluation grant: 25 credits** *(placeholder — confirm)*, once per account, issued on
-  **first API-key creation** (not on signup — most signups are M2 end-users, not developers).
+- **Free evaluation grant: 25 credits** (default — now runtime-editable), once per account, issued
+  on **first API-key creation** (not on signup — most signups are M2 end-users, not developers).
   Ledger ref `signup:<ownerId>`; the unique ref makes the grant idempotent and un-farmable per
   account.
-- **Credit packs** (all numbers are placeholders pending pricing sign-off — they live in ONE
-  place, `backend/src/lib/pricing.ts`, and the portal fetches them via `GET
-  /api/v1/dev/billing/packs`; never hardcode prices in `web/`):
+- **Pricing is runtime-editable — not a code constant.** The pack list + signup-grant size are
+  stored in `app_settings["pricing"]` and read through `services/pricingService.ts`
+  (`getPricingConfig`/`getPackById`/`getSignupGrantCredits`). `backend/src/lib/pricing.ts` holds
+  only `DEFAULT_PRICING` (the fallback used when a fresh DB has no override) plus the shared
+  `CreditPack`/`PricingConfig` types + rate-limit tiers. A super_admin edits prices live via
+  `GET`/`PATCH /api/v1/admin/pricing` (the `/admin/credits` UI) — no redeploy. The portal/landing
+  still fetch the live table via `GET /api/v1/dev/billing/packs`; **never hardcode prices in `web/`**.
+- **Default credit packs** (the `DEFAULT_PRICING` fallback — a super_admin can override any of
+  these at runtime):
 
   | pack_id   | credits | price (ETB) | note              |
   |-----------|---------|-------------|-------------------|
-  | `starter` | 200     | TBD         | entry             |
-  | `growth`  | 1,000   | TBD         | ~15% bonus credits|
-  | `scale`   | 5,000   | TBD         | ~30% bonus credits|
+  | `starter` | 200     | 250         | entry             |
+  | `growth`  | 1,000   | 1,000       | ~15% bonus credits|
+  | `scale`   | 5,000   | 4,500       | ~30% bonus credits|
 
 - **Rate-limit tiers:** free keys default **10 req/min**; after the account's first successful
   purchase, all its active keys move to **60 req/min** and new keys default to 60; enterprise =
@@ -408,7 +414,8 @@ New `routes/devPortalRoutes.ts` + `controllers/devPortalController.ts`:
 - `POST /keys { name }` — create; response contains the **raw key once**. First-ever key for
   the account also fires the signup grant (§1).
 - `DELETE /keys/:id` — revoke (status flip + `revokedAt`; rows are never deleted — logs FK them).
-- `GET  /billing/packs` — the pricing table from `lib/pricing.ts`.
+- `GET  /billing/packs` — the live pricing table via `pricingService.getPricingConfig()`
+  (`app_settings["pricing"]`, falling back to `DEFAULT_PRICING`).
 - `POST /billing/checkout { packId }`, `GET /billing/purchase/:txRef`,
   `POST /billing/promo { code }` — §7.
 - `GET  /billing/history` — purchases + promo redemptions + grants for the account.
@@ -429,10 +436,18 @@ audit-logged):
 
 - `POST/GET/PATCH /api/v1/admin/promo` — promo CRUD (create with generated or manual code,
   disable, list with redemption counts).
+- `GET  /api/v1/admin/credits/lookup?email|ownerId` — look up an account + its live balance
+  (backs the `/admin/credits` user-lookup panel).
 - `POST /api/v1/admin/credits/grant { ownerId | email, amount, note }` — manual grants
   (enterprise bank-transfer deals, goodwill) via `creditBridge.grant({ source: "admin_grant",
   ref: "admin:" + uuid })`.
+- `GET`/`PATCH /api/v1/admin/pricing` — read/update the runtime pricing config (packs +
+  signup-grant size) in `app_settings["pricing"]` via `pricingService` (§1).
 - `PATCH /api/v1/admin/api-keys/:id/limit { rateLimitPerMin }` — enterprise overrides.
+
+Keyless demo (landing live-demo, no auth, rate-limited): `GET /api/v1/dev/demo` lists a few real
+already-cached sample VINs from the ledger, `GET /api/v1/dev/demo/:vin` returns the public decode
+envelope for one — so the landing demo shows real data without spending a credit or a key.
 
 ---
 

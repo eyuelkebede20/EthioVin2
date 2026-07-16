@@ -467,9 +467,17 @@ system, and stubs/handoffs. Read that file before touching M2 code. See also the
 **Status:** backend `/v1` API platform + `web/` developer portal are **shipped** (T1–T13; see
 `claude.report.md` for the per-task rundown and the launch/handoff checklist). Concrete surface:
 public `/v1` (`decode`/`account`/`usage`/`health`, `decode/batch` a 501 stub), portal
-`/api/v1/dev/*` (keys, `billing/*`, `usage/summary`, keyless `demo/:vin`), admin promo/grant/
-key-limit on `/api/v1/admin/*`, and `web/` pages `/developers`, `/developers/docs`,
-`/dashboard/api`. Schema applied via `backend/src/db/m3.sql` (idempotent) or migration `0004`.
+`/api/v1/dev/*` (keys, `billing/*`, `usage/summary`, keyless `demo` + `demo/:vin`), admin
+promo/grant/credits-lookup/**pricing**/key-limit on `/api/v1/admin/*`, and `web/` pages
+`/developers`, `/developers/docs`, `/dashboard/api`, `/admin/credits`. Schema applied via
+`backend/src/db/m3.sql` (idempotent) or migration `0004`.
+
+**Pricing is runtime-editable, not a code constant.** Credit-pack prices + the signup-grant
+size live in `app_settings["pricing"]` and are read through `services/pricingService.ts`;
+`lib/pricing.ts` only holds the `DEFAULT_PRICING` fallback for a fresh DB. A super_admin edits
+them live via `GET`/`PATCH /api/v1/admin/pricing` (the `/admin/credits` UI) — no redeploy. So
+the earlier "pricing sign-off" and "swap the demo VINs" handoffs are **closed**: demo VINs now
+come from real cached ledger rows, and prices are adjustable in-product.
 
 M3 turns the decode engine into a standalone, sellable developer product: keyed access to a
 public **`POST /v1/decode`**, prepaid **credit metering** (1 credit = one decode that returns
