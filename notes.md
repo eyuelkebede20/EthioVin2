@@ -1,0 +1,46 @@
+# notes.md — working notes
+
+Freeform working notes for the current effort (public site + API launch prep).
+Formal docs live in `CLAUDE.md` / `claude.milestone*.md` / `API_REFERENCE.md`;
+the build journal is `tasks.md`. This file is scratch/decisions.
+
+## 2026-07-16 — public landing page + client-only deploy
+
+**Why:** `ethiovin.senaycreatives.com` (the `client/` Vite SPA at `/public_html/ethiovin/`)
+dropped every visitor straight onto a bare login form. Goal: a public page that explains the
+product, Ethiopia-focused, before asking anyone to sign in.
+
+**What shipped (client/, live via `deploy-client.yml`):**
+- `pages/LandingPage.tsx` — public landing at `/`. Sections: hero (Ethiopia import-fleet angle) +
+  inline SVG car with an animated VIN-scan bar, import-origin flag strip (from `IMPORT_COUNTRIES`),
+  a 4-step "How it works" process, "what you get" + a mock decoded-profile card, "who it's for",
+  a **Developers** section (curl `POST /v1/decode` sample + portal/docs links), final CTA, footer.
+- `App.tsx` — router always mounted; `/` public, `/login` for the form, app routes auth-guarded.
+- `LoginPage.tsx` — "← Back to home" link; post-login redirect → `/scan`.
+- All car imagery is **inline SVG / emoji** — no external image hosts (avoids broken hotlinks +
+  keeps the build self-contained). If we want real photos later, drop them in `client/public/`
+  and swap `CarHero`/`CarProfileCard`.
+
+**Deploy mechanism:** the main `deploy.yml` is `main`-only and deploys client + web + backend in
+ONE job (no path filters). Merging to `main` now would push the un-migrated M2/M3 backend to prod
+(L1 `m3.sql` + L2 Chapa env not done) → risky. So added `deploy-client.yml`: FTPs only
+`client/dist` → `/public_html/ethiovin/`, triggered by `client/**` pushes to `milestone-2`.
+⚠️ Side effect: every future `client/**` push to `milestone-2` auto-deploys to prod. Switch to
+`workflow_dispatch`-only if that's unwanted.
+
+## Open decisions / known gaps
+
+- **Developer flow isn't fully live.** The landing's Developers section links to
+  `https://ethiovinapi.senaycreatives.com/developers` (+ `/docs`). Those are `web/` (Next) routes,
+  and that app isn't confirmed deployed/domain-mapped yet — AND the M3 `/v1` backend isn't in prod
+  (needs L1/L2/L4). So the links are aspirational until the real launch. Key management lives in
+  `web/ /dashboard/api`, not in the `client/` SPA. Revisit when `web/` is live.
+- The `curl` sample uses the API domain `ethiovinapi.senaycreatives.com/v1/decode` — correct once
+  the M3 backend is deployed.
+
+## Launch path (see `tasks.md` → "M3 LAUNCH plan")
+
+L1 apply `m3.sql` on prod → L2 set Chapa env → L3 pin Passenger to 1 instance (in-memory limiters,
+shared-hosting choice) → L4 merge `milestone-2` → `main` (full deploy) → L5 `npm run smoke` +
+`RUN_DB_TESTS=1 npm test` → L6 real Chapa test payment → L7 cron `logs:prune` + seed promo →
+L8 build `POST /v1/decode/batch` (currently 501 stub).

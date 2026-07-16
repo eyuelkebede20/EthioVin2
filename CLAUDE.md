@@ -313,9 +313,12 @@ guards `/api/auth/*`). Roles allowed are in parentheses. (M3 adds the keyed publ
 
 ### Layout (`client/src/`)
 
-- `main.tsx` / `App.tsx` — root + routing. `App` reads the session; renders `LoginPage` if
-  signed out, otherwise the router. Routes: `/` → redirect `/scan`; `/scan` (`ScannerPage`);
-  `/history/:vin` (`HistoryPage`); `/admin` (`AdminDashboard`, super_admin only); `*` → `/scan`.
+- `main.tsx` / `App.tsx` — root + routing. The router is ALWAYS mounted (public + app routes).
+  Routes: `/` → **public `LandingPage`** (signed-in users redirect to `/scan`); `/login`
+  (`LoginPage`; signed-in → `/scan`); `/scan` (`ScannerPage`), `/history/:vin` (`HistoryPage`),
+  `/admin` (`AdminDashboard`, super_admin) are **auth-guarded** (signed-out → `/login`); `*` →
+  `/` when signed out, `/scan` when signed in. (Was previously "render `LoginPage` if signed out";
+  changed so the marketing site at `ethiovin.senaycreatives.com` explains the product first.)
 - `lib/auth-client.ts` — better-auth client instance.
 - `lib/constants.ts` — `IMPORT_COUNTRIES`, `DEFAULT_MANUFACTURERS` (UI fallback lists).
 - `lib/roles.ts` — `VERIFIER_ROLES` + `canVerify(role)`: the client-side "who can write" check
@@ -327,7 +330,11 @@ guards `/api/auth/*`). Roles allowed are in parentheses. (M3 adds the keyed publ
   - `vinService.ts` — typed wrappers + the response interfaces (`ScanResponse` union: `ScanLedgerHit | ScanCacheHit | ScanMiss`).
   - `adminService.ts` — WMI admin calls.
 - `pages/`
-  - `LoginPage.tsx` — combined sign-in / sign-up (min 8-char password; redirects to `/` on success).
+  - `LandingPage.tsx` — public marketing/landing page at `/` (Ethiopia-focused: import origins,
+    common makes, the 4-step decode process, a Developers section + `curl` sample, inline SVG car
+    art — no external image assets). Routes to `/login`. First thing a signed-out visitor sees.
+  - `LoginPage.tsx` — combined sign-in / sign-up (min 8-char password; redirects to `/scan` on
+    success; has a "← Back to home" link to `/`).
   - `ScannerPage.tsx` — owns scan state; routes ledger hits to the detail page, cache hits to a
     "record this VIN" detail view. On a **miss it branches by role** (`canVerify`): verifier roles
     get the full `VerificationForm`; read-only roles (`user`/`insurance`) get `UnknownVehicleNotice`
@@ -402,6 +409,10 @@ M3 adds six additive tables (`api_key`, `api_request_log`, `api_idempotency`, `p
 - Passenger/LiteSpeed restart trick: write **changing** content to `backend/tmp/restart.txt`
   (an empty `touch` would be skipped by the FTP delta-sync), refreshing its mtime to force a restart.
 - DB migrations are NOT run by CI — apply them manually (`adjust.sql` / generated migrations).
+- **`deploy-client.yml` (client-only):** a SECOND workflow that FTPs **only** `client/dist/` →
+  `/public_html/ethiovin/`, triggered by `client/**` pushes to `milestone-2` (+ manual dispatch).
+  It exists so the public landing page can ship from `milestone-2` WITHOUT a full `main` deploy
+  (which would also push the not-yet-migrated M2/M3 backend). Untouched: backend + `web/`.
 
 ---
 
