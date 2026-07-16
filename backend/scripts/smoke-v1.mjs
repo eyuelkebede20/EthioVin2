@@ -14,8 +14,13 @@
 //               runs and SPENDS 1 credit on a hit — use a throwaway/test key.
 // CACHED_VIN    optional — a VIN already in the ledger/cache (expects match!=none,
 //               charged:1). Get one from GET /api/v1/dev/demo. If omitted, the
-//               charged-hit assertion is skipped (only the free/invalid path runs).
-// INVALID_VIN   optional — defaults to "NOTAVALIDVIN0000" (expects valid:false, free).
+//               charged-hit assertion is skipped (only the free paths run).
+// UNKNOWN_VIN   optional — a well-formed 17-char VIN that is NOT in the cache.
+//               Expects 200 match:"none" charged:0 (the "never charge for we-don't-
+//               know" law). Default is a random-looking WMI unlikely to be cached.
+// INVALID_VIN   optional — a MALFORMED VIN (not 17 clean chars). Expects HTTP 422
+//               invalid_vin with the public error envelope (free, not charged).
+//               Default "NOTAVALIDVIN0" (13 chars).
 //
 // Exit code 0 = all run checks passed, 1 = a check failed. The 402 path (empty
 // balance) is NOT auto-run — it needs a zero-credit key; see the manual note printed
@@ -24,7 +29,8 @@
 const BASE = (process.env.BASE_URL || "").replace(/\/+$/, "");
 const KEY = process.env.API_KEY || "";
 const CACHED_VIN = process.env.CACHED_VIN || "";
-const INVALID_VIN = process.env.INVALID_VIN || "NOTAVALIDVIN0000";
+const UNKNOWN_VIN = process.env.UNKNOWN_VIN || "ZZZ1234567ZZZ9999";
+const INVALID_VIN = process.env.INVALID_VIN || "NOTAVALIDVIN0";
 
 if (!BASE) {
   console.error("BASE_URL is required, e.g. BASE_URL=https://ethiovinapi.senaycreatives.com");
@@ -97,12 +103,20 @@ async function main() {
     } else bad("GET /v1/account", `got ${r.status} ${JSON.stringify(r.json)}`);
   }
 
-  // 4. Invalid VIN decodes FREE (valid:false, charged:0) — the "never charge for we-don't-know" law.
+  // 4a. Malformed VIN -> 422 invalid_vin (public envelope), never charged.
   {
     const r = await req("/v1/decode", { key: KEY, method: "POST", body: { vin: INVALID_VIN } });
+    if (r.status === 422 && isPublicErrorEnvelope(r.json) && r.json.error.code === "invalid_vin") ok("decode malformed VIN", "422 invalid_vin (free)");
+    else bad("decode malformed VIN", `expected 422 invalid_vin, got ${r.status} ${JSON.stringify(r.json)}`);
+  }
+
+  // 4b. Well-formed but unknown VIN -> 200 match:"none", charged:0 (the "never charge
+  //     for we-don't-know" law: a valid VIN we can't match is free, not an error).
+  {
+    const r = await req("/v1/decode", { key: KEY, method: "POST", body: { vin: UNKNOWN_VIN } });
     const charged = r.json?.credits?.charged;
-    if (r.status === 200 && r.json?.valid === false && charged === 0) ok("decode invalid VIN", "valid:false charged:0 (free)");
-    else bad("decode invalid VIN", `expected 200 valid:false charged:0, got ${r.status} ${JSON.stringify(r.json)}`);
+    if (r.status === 200 && r.json?.match === "none" && charged === 0 && r.json?.vehicle === null) ok("decode unknown VIN", "200 match:none charged:0 (free)");
+    else bad("decode unknown VIN", `expected 200 match:none charged:0, got ${r.status} match:${r.json?.match} ${JSON.stringify(r.json?.credits)}`);
   }
 
   // 5. Cached VIN decodes as a HIT and charges exactly 1 credit.

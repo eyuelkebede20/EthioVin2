@@ -38,6 +38,18 @@ ONE job (no path filters). Merging to `main` now would push the un-migrated M2/M
 - The `curl` sample uses the API domain `ethiovinapi.senaycreatives.com/v1/decode` — correct once
   the M3 backend is deployed.
 
+## 2026-07-16 — review fix: smoke script invalid-VIN contract
+
+Self-review of `scripts/smoke-v1.mjs` caught a wrong assertion: it expected a malformed
+VIN to return `200 { valid:false, charged:0 }`. The real `/v1/decode` contract (controller
+`publicApiController.ts` + `API_REFERENCE.md`) is:
+- **Malformed VIN** (not 17 clean chars) → `422 invalid_vin` (public error envelope), free.
+- **Well-formed but unknown VIN** → `200 match:"none", charged:0` (free) — this is the
+  "never charge for we-don't-know" path. There is no `valid:false` shape; `valid` is always true.
+
+Fixed: split into two checks (422 malformed + 200 match:none unknown), added `UNKNOWN_VIN`
+env (default `ZZZ1234567ZZZ9999`). Docs were already correct — only the script was wrong.
+
 ## Launch path (see `tasks.md` → "M3 LAUNCH plan")
 
 L1 apply `m3.sql` on prod → L2 set Chapa env → L3 pin Passenger to 1 instance (in-memory limiters,
