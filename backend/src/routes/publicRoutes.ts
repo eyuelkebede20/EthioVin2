@@ -1,8 +1,8 @@
 import { Router } from "express";
-import type { Request, Response, NextFunction } from "express";
+import type { Request, Response } from "express";
 import { ipFloodLimiter, invalidKeyLimiter, requireApiKey, perKeyLimiter } from "../middleware/apiKeyAuth.ts";
-import { publicNotFound, publicErrorHandler, PublicApiError } from "../middleware/publicApiError.ts";
-import { decode, account, usage } from "../controllers/publicApiController.ts";
+import { publicNotFound, publicErrorHandler } from "../middleware/publicApiError.ts";
+import { decode, decodeBatch, account, usage } from "../controllers/publicApiController.ts";
 
 // The public, keyed API surface. Mounts at /v1 (host-agnostic — the one deliberate
 // exception to the /api/* rule). Its own notFound + error handler keep the public
@@ -19,10 +19,8 @@ router.use(ipFloodLimiter, invalidKeyLimiter, requireApiKey, perKeyLimiter);
 
 router.post("/decode", decode);
 
-// Reserved — batch decode ships as a 501 stub with a frozen contract (§8/§15).
-router.post("/decode/batch", (_req: Request, _res: Response, next: NextFunction) => {
-  next(new PublicApiError(501, "not_implemented", "Batch decode is reserved and not available in v1."));
-});
+// Batch decode — up to 50 VINs, charged per VIN, partial results (§8/§15).
+router.post("/decode/batch", decodeBatch);
 
 router.get("/account", account);
 router.get("/usage", usage);

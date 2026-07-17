@@ -55,4 +55,4 @@ env (default `ZZZ1234567ZZZ9999`). Docs were already correct — only the script
 L1 apply `m3.sql` on prod → L2 set Chapa env → L3 pin Passenger to 1 instance (in-memory limiters,
 shared-hosting choice) → L4 merge `milestone-2` → `main` (full deploy) → L5 `npm run smoke` +
 `RUN_DB_TESTS=1 npm test` → L6 real Chapa test payment → L7 cron `logs:prune` + seed promo →
-L8 build `POST /v1/decode/batch` (currently 501 stub).
+L8 `POST /v1/decode/batch` — DONE 2026-07-17 (implemented; was a 501 stub).

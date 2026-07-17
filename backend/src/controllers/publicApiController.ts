@@ -8,7 +8,7 @@ import * as creditBridge from "../services/creditBridge.ts";
 import { InsufficientCreditsError } from "../services/creditBridge.ts";
 import { sha256hex } from "../services/apiKeyService.ts";
 import { newRequestId } from "../utils/id.ts";
-import { publicDecodeSchema, usageRangeSchema } from "../utils/validation.ts";
+import { publicDecodeSchema, publicDecodeBatchSchema, BATCH_DECODE_MAX, usageRangeSchema } from "../utils/validation.ts";
 import { PublicApiError } from "../middleware/publicApiError.ts";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +65,86 @@ function readIdemKey(req: Request): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// decodeCore — the pure parse + resolve step, shared by /decode and /decode/batch.
+// NO charge, NO logging, NO idempotency: it only turns a raw VIN into one of three
+// outcomes. Charging + the response envelope differ between single (throw) and batch
+// (per-item), so they stay in the callers; this keeps ONE decode path.
+// ---------------------------------------------------------------------------
+type ParsedBlock = {
+  wmi: string;
+  vds: string;
+  vis: string;
+  plant_code: string;
+  model_year: number | null;
+  country: string | null;
+  manufacturer: string | null;
+};
+
+type DecodeCore =
+  | { kind: "invalid" }
+  | { kind: "none"; keyVin: string; parsed: ParsedBlock }
+  | {
+      kind: "hit";
+      keyVin: string;
+      match: "exact" | "model";
+      parsed: ParsedBlock;
+      vehicle: { make: string | null; model: string | null; year: number | null; image_url: string | null };
+      specs: Record<string, unknown> | null;
+    };
+
+async function decodeCore(rawVin: string): Promise<DecodeCore> {
+  let decoded: ParsedVin;
+  try {
+    decoded = parseVin(rawVin);
+  } catch {
+    return { kind: "invalid" };
+  }
+
+  const { match, identity, specs } = await resolveVehicle(rawVin);
+  const country = identity.country ?? (await lookupCountry(decoded.wmi));
+  const parsed: ParsedBlock = {
+    wmi: decoded.wmi,
+    vds: decoded.vds_code,
+    vis: decoded.vis,
+    plant_code: decoded.plant,
+    model_year: yearToNumber(decoded.year),
+    country,
+    manufacturer: identity.manufacturer ?? null,
+  };
+
+  if (match === "none") return { kind: "none", keyVin: decoded.keyVin, parsed };
+  return {
+    kind: "hit",
+    keyVin: decoded.keyVin,
+    match,
+    parsed,
+    vehicle: {
+      make: identity.manufacturer ?? null,
+      model: identity.model ?? null,
+      year: yearToNumber(identity.year),
+      image_url: identity.image_url ?? null,
+    },
+    specs: specs ?? null,
+  };
+}
+
+/** Replay a stored idempotent response, or throw 409 on a body mismatch. Returns true if replayed. */
+async function replayIdempotent(idemKey: string | null, apiKeyId: string, requestHash: string, res: Response): Promise<boolean> {
+  if (!idemKey) return false;
+  const [prior] = await db
+    .select()
+    .from(apiIdempotency)
+    .where(and(eq(apiIdempotency.apiKeyId, apiKeyId), eq(apiIdempotency.idemKey, idemKey)))
+    .limit(1);
+  if (!prior) return false;
+  if (prior.requestHash !== requestHash) {
+    throw new PublicApiError(409, "idempotency_conflict", "This Idempotency-Key was already used with a different request body.");
+  }
+  res.status(prior.httpStatus).json(prior.response);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // POST /v1/decode — the product. Charging law order is testable (§6).
 // ---------------------------------------------------------------------------
 export const decode = async (req: Request, res: Response) => {
@@ -84,47 +164,22 @@ export const decode = async (req: Request, res: Response) => {
   const requestHash = sha256hex(JSON.stringify({ vin: rawVin }));
 
   // 2. Idempotency replay — before any decode or charge.
-  if (idemKey) {
-    const [prior] = await db
-      .select()
-      .from(apiIdempotency)
-      .where(and(eq(apiIdempotency.apiKeyId, keyRow.id), eq(apiIdempotency.idemKey, idemKey)))
-      .limit(1);
-    if (prior) {
-      if (prior.requestHash !== requestHash) {
-        throw new PublicApiError(409, "idempotency_conflict", "This Idempotency-Key was already used with a different request body.");
-      }
-      return res.status(prior.httpStatus).json(prior.response);
-    }
-  }
+  if (await replayIdempotent(idemKey, keyRow.id, requestHash, res)) return;
 
-  // 3. Clean + 17-char check (parseVin throws AppError(400) on bad length -> map to 422, free).
-  let decoded: ParsedVin;
-  try {
-    decoded = parseVin(rawVin);
-  } catch {
+  // 3. Parse + decode.
+  const core = await decodeCore(rawVin);
+
+  // 4. Invalid VIN -> 422, free.
+  if (core.kind === "invalid") {
     await logRequest({ requestId, apiKeyId: keyRow.id, endpoint: "decode", vin: null, result: "invalid", creditsCharged: 0, httpStatus: 422, startedAt, ip });
     throw new PublicApiError(422, "invalid_vin", "The VIN did not clean to 17 characters.");
   }
 
-  // 4. Decode.
-  const { match, identity, specs } = await resolveVehicle(rawVin);
-  const country = identity.country ?? (await lookupCountry(decoded.wmi));
-  const parsedBlock = {
-    wmi: decoded.wmi,
-    vds: decoded.vds_code,
-    vis: decoded.vis,
-    plant_code: decoded.plant,
-    model_year: yearToNumber(decoded.year),
-    country,
-    manufacturer: identity.manufacturer ?? null,
-  };
-
   // 5. Parse-only miss -> free, 0 credits.
-  if (match === "none") {
+  if (core.kind === "none") {
     const balance = await creditBridge.balance(keyRow.ownerId);
-    const body = { request_id: requestId, vin: decoded.keyVin, valid: true, match: "none" as DecodeMatch, parsed: parsedBlock, vehicle: null, specs: null, credits: { charged: 0, balance } };
-    await logRequest({ requestId, apiKeyId: keyRow.id, endpoint: "decode", vin: decoded.keyVin, result: "parse_only", creditsCharged: 0, httpStatus: 200, startedAt, ip });
+    const body = { request_id: requestId, vin: core.keyVin, valid: true, match: "none" as DecodeMatch, parsed: core.parsed, vehicle: null, specs: null, credits: { charged: 0, balance } };
+    await logRequest({ requestId, apiKeyId: keyRow.id, endpoint: "decode", vin: core.keyVin, result: "parse_only", creditsCharged: 0, httpStatus: 200, startedAt, ip });
     await storeIdempotent(idemKey, keyRow.id, requestHash, 200, body);
     return res.status(200).json(body);
   }
@@ -136,7 +191,7 @@ export const decode = async (req: Request, res: Response) => {
     ({ balance: balanceAfter } = await creditBridge.charge({ ownerId: keyRow.ownerId, amount: 1, source: "api_decode", ref: "decode:" + requestId }));
   } catch (err) {
     if (err instanceof InsufficientCreditsError) {
-      await logRequest({ requestId, apiKeyId: keyRow.id, endpoint: "decode", vin: decoded.keyVin, result: match, creditsCharged: 0, httpStatus: 402, startedAt, ip });
+      await logRequest({ requestId, apiKeyId: keyRow.id, endpoint: "decode", vin: core.keyVin, result: core.match, creditsCharged: 0, httpStatus: 402, startedAt, ip });
       throw new PublicApiError(402, "insufficient_credits", "Your balance is empty. Top up to continue decoding.");
     }
     throw err;
@@ -144,20 +199,86 @@ export const decode = async (req: Request, res: Response) => {
 
   const body = {
     request_id: requestId,
-    vin: decoded.keyVin,
+    vin: core.keyVin,
     valid: true,
-    match,
-    parsed: parsedBlock,
-    vehicle: {
-      make: identity.manufacturer ?? null,
-      model: identity.model ?? null,
-      year: yearToNumber(identity.year),
-      image_url: identity.image_url ?? null,
-    },
-    specs: specs ?? null,
+    match: core.match,
+    parsed: core.parsed,
+    vehicle: core.vehicle,
+    specs: core.specs,
     credits: { charged: 1, balance: balanceAfter },
   };
-  await logRequest({ requestId, apiKeyId: keyRow.id, endpoint: "decode", vin: decoded.keyVin, result: match, creditsCharged: 1, httpStatus: 200, startedAt, ip });
+  await logRequest({ requestId, apiKeyId: keyRow.id, endpoint: "decode", vin: core.keyVin, result: core.match, creditsCharged: 1, httpStatus: 200, startedAt, ip });
+  await storeIdempotent(idemKey, keyRow.id, requestHash, 200, body);
+  return res.status(200).json(body);
+};
+
+// ---------------------------------------------------------------------------
+// POST /v1/decode/batch — up to BATCH_DECODE_MAX VINs in one call. Each VIN is
+// decoded and charged INDEPENDENTLY (same charging law as /decode): hits cost 1
+// credit each, parse-only + invalid are free. Partial results — one VIN's error
+// (invalid, or insufficient credits mid-batch) never fails the others. The call
+// itself is always HTTP 200; per-VIN outcomes live in `results`. Charges run
+// sequentially, so the guarded decrement can never over-spend the balance.
+// ---------------------------------------------------------------------------
+export const decodeBatch = async (req: Request, res: Response) => {
+  const startedAt = Date.now();
+  const batchRequestId = newRequestId();
+  const keyRow = req.apiKey!;
+  const ip = req.ip ?? null;
+  const idemKey = readIdemKey(req);
+
+  // 1. Validate the batch shape (1..50 bounded strings; parseVin is the per-item authority).
+  const parsed = publicDecodeBatchSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new PublicApiError(422, "invalid_request", `Provide a \`vins\` array of 1 to ${BATCH_DECODE_MAX} VIN strings.`);
+  }
+  const vins = parsed.data.vins;
+  const requestHash = sha256hex(JSON.stringify({ vins }));
+
+  // 2. Idempotency replay — before any decode or charge (replays the whole batch, no re-charge).
+  if (await replayIdempotent(idemKey, keyRow.id, requestHash, res)) return;
+
+  // 3. Decode + charge each VIN in order. Running balance is seeded once and updated on
+  //    each successful charge, so every item reports an accurate post-charge balance.
+  let runningBalance = await creditBridge.balance(keyRow.ownerId);
+  let totalCharged = 0;
+  const results: unknown[] = [];
+
+  for (const rawVin of vins) {
+    const itemRequestId = newRequestId();
+    const core = await decodeCore(rawVin);
+
+    if (core.kind === "invalid") {
+      await logRequest({ requestId: itemRequestId, apiKeyId: keyRow.id, endpoint: "decode/batch", vin: null, result: "invalid", creditsCharged: 0, httpStatus: 422, startedAt, ip });
+      results.push({ vin: rawVin, valid: false, error: { code: "invalid_vin", message: "The VIN did not clean to 17 characters." } });
+      continue;
+    }
+
+    if (core.kind === "none") {
+      await logRequest({ requestId: itemRequestId, apiKeyId: keyRow.id, endpoint: "decode/batch", vin: core.keyVin, result: "parse_only", creditsCharged: 0, httpStatus: 200, startedAt, ip });
+      results.push({ request_id: itemRequestId, vin: core.keyVin, valid: true, match: "none", parsed: core.parsed, vehicle: null, specs: null, credits: { charged: 0, balance: runningBalance } });
+      continue;
+    }
+
+    // Hit -> guarded charge. On insufficient credits, this VIN gets a per-item 402 with
+    // NO paid data; the loop continues (free parse-only VINs later still return data).
+    try {
+      const { balance } = await creditBridge.charge({ ownerId: keyRow.ownerId, amount: 1, source: "api_decode", ref: "decode:" + itemRequestId });
+      runningBalance = balance;
+      totalCharged += 1;
+      await logRequest({ requestId: itemRequestId, apiKeyId: keyRow.id, endpoint: "decode/batch", vin: core.keyVin, result: core.match, creditsCharged: 1, httpStatus: 200, startedAt, ip });
+      results.push({ request_id: itemRequestId, vin: core.keyVin, valid: true, match: core.match, parsed: core.parsed, vehicle: core.vehicle, specs: core.specs, credits: { charged: 1, balance: runningBalance } });
+    } catch (err) {
+      if (err instanceof InsufficientCreditsError) {
+        await logRequest({ requestId: itemRequestId, apiKeyId: keyRow.id, endpoint: "decode/batch", vin: core.keyVin, result: core.match, creditsCharged: 0, httpStatus: 402, startedAt, ip });
+        results.push({ vin: core.keyVin, valid: true, match: core.match, error: { code: "insufficient_credits", message: "Your balance is empty. Top up to continue decoding." } });
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  const body = { request_id: batchRequestId, results, credits: { charged: totalCharged, balance: runningBalance } };
   await storeIdempotent(idemKey, keyRow.id, requestHash, 200, body);
   return res.status(200).json(body);
 };

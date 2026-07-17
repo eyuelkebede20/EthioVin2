@@ -262,6 +262,13 @@ export const updateSettingsSchema = z
 // defers to parseVin() — NO I/O/Q rejection here (parseVin is the authority).
 export const publicDecodeSchema = z.object({ vin: z.string().min(1).max(40) });
 
+// Public POST /v1/decode/batch body. 1..50 VINs; each element is a bounded plain
+// string that defers to parseVin() per-item (same rule as the single decode).
+export const BATCH_DECODE_MAX = 50;
+export const publicDecodeBatchSchema = z.object({
+  vins: z.array(z.string().min(1).max(40)).min(1).max(BATCH_DECODE_MAX),
+});
+
 // Dev portal: create an API key. Name is a human label for the dashboard.
 export const createKeySchema = z.object({
   name: z.string().trim().min(1).max(64),

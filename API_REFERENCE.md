@@ -153,8 +153,80 @@ Idempotency-Key: order-8842-attempt-1
 
 ## POST /v1/decode/batch
 
-Reserved. Returns `501` in v1. The planned contract: up to 50 VINs per call, charged per VIN
-with partial results. Contact us if batch volume matters for your integration.
+Decode up to **50 VINs** in a single call. Each VIN is decoded and charged **independently**,
+using the exact same rules as `/v1/decode` — a data hit costs 1 credit, a parse-only result or
+an invalid VIN is free. Results are **partial**: one VIN failing (invalid, or your balance
+running out partway through) never fails the others.
+
+### Request body
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `vins` | string[] | 1 to 50 VIN strings. Each is cleaned and decoded exactly like the single endpoint (I/O/Q kept). |
+
+```json
+{ "vins": ["LCO...............", "MMB...............", "notavin"] }
+```
+
+### Response `200`
+
+The call is **always `200`** when the batch itself is well-formed — per-VIN outcomes live in
+`results`, in the same order as the request. Each element is either a decode result (the same
+shape as a single `/v1/decode` response, minus the top-level fields) or a per-VIN `error`.
+
+```json
+{
+  "request_id": "req_batch_9f2Kd1",
+  "results": [
+    {
+      "request_id": "req_x7Kd91mQ2p",
+      "vin": "LCO...............",
+      "valid": true,
+      "match": "model",
+      "parsed": { "wmi": "LCO", "vds": "CE4CB", "vis": "...", "plant_code": "S", "model_year": 2025, "country": "China", "manufacturer": "..." },
+      "vehicle": { "make": "...", "model": "...", "year": 2025, "image_url": "https://..." },
+      "specs": { "engine": { "...": "..." } },
+      "credits": { "charged": 1, "balance": 248 }
+    },
+    {
+      "vin": "MMB...............",
+      "valid": true,
+      "match": "none",
+      "parsed": { "wmi": "MMB", "vds": "...", "...": "..." },
+      "vehicle": null,
+      "specs": null,
+      "credits": { "charged": 0, "balance": 248 }
+    },
+    { "vin": "notavin", "valid": false, "error": { "code": "invalid_vin", "message": "The VIN did not clean to 17 characters." } }
+  ],
+  "credits": { "charged": 1, "balance": 248 }
+}
+```
+
+- Top-level `credits.charged` is the **total** credits spent by the batch; `credits.balance` is
+  your balance **after** the batch.
+- Each successful result carries its own `credits.balance` reflecting the balance at that point
+  in the batch (charges are applied in order).
+- If your balance runs out mid-batch, the remaining data-hit VINs return a per-VIN
+  `insufficient_credits` error (**no vehicle data**), while later parse-only VINs still return
+  their free result.
+
+### Charging & idempotency
+
+- Charging is sequential, so a batch can never overspend your balance.
+- The optional `Idempotency-Key` header covers the **whole batch**: replaying the same key + body
+  returns the stored batch response with no additional charges; a different body returns `409`.
+
+### Errors (batch-level)
+
+Only a malformed batch envelope fails the whole call:
+
+| HTTP | `code` | Meaning |
+|------|--------|---------|
+| 422 | `invalid_request` | `vins` is missing, empty, or has more than 50 entries. |
+
+Per-VIN problems (`invalid_vin`, `insufficient_credits`) appear inside `results`, not as a
+top-level error.
 
 ---
 
@@ -210,6 +282,7 @@ All errors use one envelope:
 | 402 | `insufficient_credits` | Balance is empty. No vehicle data is returned. Top up in the dashboard. |
 | 409 | `idempotency_conflict` | This `Idempotency-Key` was already used with a different request body. |
 | 422 | `invalid_vin` | The VIN did not clean to 17 characters. Free. |
+| 422 | `invalid_request` | Malformed request body (e.g. batch `vins` missing, empty, or over 50). Free. |
 | 429 | `rate_limited` | Per-key rate limit exceeded. Honor `Retry-After`. |
 | 500 | `server_error` | Something broke on our side. Retry with the same `Idempotency-Key`; you will not be double-charged. |
 
@@ -255,5 +328,5 @@ print(data["match"], data["vehicle"], data["credits"]["balance"])
 
 ## Changelog
 
-- **v1 (unreleased)** — initial public surface: `decode`, `account`, `usage`, `health`;
-  idempotency; batch reserved.
+- **v1 (unreleased)** — initial public surface: `decode`, `decode/batch`, `account`, `usage`,
+  `health`; idempotency.

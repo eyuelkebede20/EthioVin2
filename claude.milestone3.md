@@ -31,9 +31,9 @@ only summarizes it. If the contract changes, change `API_REFERENCE.md` first.
   `/developers/docs` rendered from `API_REFERENCE.md`.
 
 **Out of scope (backlog, see §15):** recurring subscriptions, test-mode keys (`evn_test_`
-prefix is *reserved*, not implemented), batch decode (ships as a 501 stub with a reserved
-contract), per-key IP allowlists, OpenAPI/generated SDKs, Redis rate-limit store, tax
-receipts/invoices, monthly free-credit refresh.
+prefix is *reserved*, not implemented), per-key IP allowlists, OpenAPI/generated SDKs, Redis
+rate-limit store, tax receipts/invoices, monthly free-credit refresh. (Batch decode
+`POST /v1/decode/batch` is now **implemented** — see §8.)
 
 ---
 
@@ -371,8 +371,11 @@ double-charge complaints.
 ## 8. Public surface (summary — `API_REFERENCE.md` is the external source of truth)
 
 - `POST /v1/decode` — the product. Body `{ "vin": "..." }` → the envelope below.
-- `POST /v1/decode/batch` — **501 stub in v1**; contract reserved (≤50 VINs, per-VIN charge,
-  partial results). Don't implement ad hoc; when it ships it gets its own T-task.
+- `POST /v1/decode/batch` — **implemented** (2026-07-17). Body `{ "vins": [...] }`, 1..50 VINs;
+  each VIN decoded + charged INDEPENDENTLY (same charging law as `/decode`), partial results
+  (per-VIN result or `error` envelope), always HTTP 200 unless the batch body itself is malformed
+  (→ `422 invalid_request`). Batch-level `Idempotency-Key`. Shares `decodeCore` with `/decode`;
+  charges run sequentially so a batch can't overspend the balance.
 - `GET /v1/account` — balance, calling-key info, month-to-date usage.
 - `GET /v1/usage?from=YYYY-MM-DD&to=YYYY-MM-DD` — per-day counts from `api_request_log`.
 - `GET /v1/health` — public, unauthenticated, mirrors `/health`.
@@ -570,7 +573,7 @@ interface and the bridge is the last thing wired.
 
 ## 15. Stubs / handoffs / backlog
 
-- `POST /v1/decode/batch` — 501 with the reserved contract (§8).
+- ~~`POST /v1/decode/batch` — 501 with the reserved contract (§8).~~ **DONE 2026-07-17** — implemented per §8.
 - `evn_test_` sandbox mode — prefix reserved, rejected, unimplemented.
 - Per-key IP allowlist (jsonb column) — phase 2.
 - OpenAPI spec + generated SDKs — backlog; `API_REFERENCE.md` is the contract until then.

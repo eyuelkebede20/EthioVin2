@@ -7,6 +7,7 @@ import { generatePromoCode } from "../src/services/promoService.ts";
 import { getPack, CREDIT_PACKS, SIGNUP_GRANT_CREDITS } from "../src/lib/pricing.ts";
 import { newRequestId, nano } from "../src/utils/id.ts";
 import { parseVin } from "../src/utils/vin.ts";
+import { publicDecodeBatchSchema, BATCH_DECODE_MAX } from "../src/utils/validation.ts";
 
 // These are pure-logic tests — they never hit the database. (Importing the modules
 // is safe: db/index.ts constructs a LAZY postgres client and only connects on query.)
@@ -79,4 +80,18 @@ test("parseVin: rejects non-17, keeps I/O/Q, correct slices", () => {
   assert.equal(p.wmi, "LCO");
   assert.equal(p.vds_code, "CE4CB");
   assert.ok(p.keyVin.includes("O"), "O is preserved (ASEAN VIN)");
+});
+
+// --- Batch decode body validation (1..50 VINs) -------------------------------
+test("publicDecodeBatchSchema: accepts 1..50, rejects empty/oversized/non-array", () => {
+  assert.equal(BATCH_DECODE_MAX, 50);
+  // Valid: one VIN, and exactly the max.
+  assert.ok(publicDecodeBatchSchema.safeParse({ vins: ["LCOCE4CBS12345678"] }).success);
+  assert.ok(publicDecodeBatchSchema.safeParse({ vins: Array(BATCH_DECODE_MAX).fill("LCOCE4CBS12345678") }).success);
+  // Invalid: empty array, over the cap, missing field, wrong type, empty string element.
+  assert.equal(publicDecodeBatchSchema.safeParse({ vins: [] }).success, false);
+  assert.equal(publicDecodeBatchSchema.safeParse({ vins: Array(BATCH_DECODE_MAX + 1).fill("x") }).success, false);
+  assert.equal(publicDecodeBatchSchema.safeParse({}).success, false);
+  assert.equal(publicDecodeBatchSchema.safeParse({ vins: "LCOCE4CBS12345678" }).success, false);
+  assert.equal(publicDecodeBatchSchema.safeParse({ vins: [""] }).success, false);
 });

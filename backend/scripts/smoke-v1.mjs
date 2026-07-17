@@ -143,6 +143,30 @@ async function main() {
     console.log("  – (no CACHED_VIN set — skipping the charged-hit + idempotency checks)");
   }
 
+  // 7. Batch decode: always 200, partial results, per-VIN outcomes. Mixes an invalid VIN
+  //    (free per-item error) with an unknown VIN (free match:none). Uses no cached VIN so
+  //    it never charges — keeps the smoke test cheap and balance-neutral.
+  {
+    const r = await req("/v1/decode/batch", { key: KEY, method: "POST", body: { vins: [UNKNOWN_VIN, INVALID_VIN] } });
+    const results = r.json?.results;
+    const okShape =
+      r.status === 200 &&
+      Array.isArray(results) &&
+      results.length === 2 &&
+      results[0]?.match === "none" &&
+      results[0]?.credits?.charged === 0 &&
+      results[1]?.valid === false &&
+      results[1]?.error?.code === "invalid_vin" &&
+      r.json?.credits?.charged === 0;
+    if (okShape) ok("POST /v1/decode/batch", `200, ${results.length} partial results, total charged:0`);
+    else bad("POST /v1/decode/batch", `expected 200 with [match:none, invalid_vin] charged:0, got ${r.status} ${JSON.stringify(r.json)}`);
+
+    // Malformed batch (empty vins) -> 422 invalid_request (whole call fails, free).
+    const bad1 = await req("/v1/decode/batch", { key: KEY, method: "POST", body: { vins: [] } });
+    if (bad1.status === 422 && bad1.json?.error?.code === "invalid_request") ok("batch empty vins", "422 invalid_request");
+    else bad("batch empty vins", `expected 422 invalid_request, got ${bad1.status} ${JSON.stringify(bad1.json)}`);
+  }
+
   finish();
 }
 

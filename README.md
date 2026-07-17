@@ -251,8 +251,6 @@ need production credentials and are the operator's to run.
 
 ## Known deferrals
 
-- **Batch decode** — `POST /v1/decode/batch` is a `501` stub with a frozen contract (up to 50 VINs,
-  charged per VIN, partial results); the one real remaining feature.
 - **Payments** — provider webhook is real for Chapa; the legacy M2 premium adapter is still stubbed
   (`pay.stub.local`) pending final provider wiring.
 - Orphaned `vehicle_specs` rows on repeat saves; `vehicle_ledger` duplicates specs instead of

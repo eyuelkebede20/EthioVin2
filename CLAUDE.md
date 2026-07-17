@@ -477,7 +477,7 @@ system, and stubs/handoffs. Read that file before touching M2 code. See also the
 
 **Status:** backend `/v1` API platform + `web/` developer portal are **shipped** (T1–T13; see
 `claude.report.md` for the per-task rundown and the launch/handoff checklist). Concrete surface:
-public `/v1` (`decode`/`account`/`usage`/`health`, `decode/batch` a 501 stub), portal
+public `/v1` (`decode`/`decode/batch`/`account`/`usage`/`health`), portal
 `/api/v1/dev/*` (keys, `billing/*`, `usage/summary`, keyless `demo` + `demo/:vin`), admin
 promo/grant/credits-lookup/**pricing**/key-limit on `/api/v1/admin/*`, and `web/` pages
 `/developers`, `/developers/docs`, `/dashboard/api`, `/admin/credits`. Schema applied via

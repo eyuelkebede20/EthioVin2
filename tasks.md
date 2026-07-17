@@ -18,11 +18,14 @@ the dense build journal + launch runbook (L1–L8) are below and remain authorit
   fragmented; there was no single entry point for a human dev. **CLOSED.**
 - [x] Documentation map updated to list `README.md` first (in README + this file).
 
-### The one real remaining FEATURE (I can build; needs your go-ahead)
-- [ ] **`POST /v1/decode/batch`** (L8) — replace the `501` stub in `publicRoutes.ts` with the
-  frozen contract: up to 50 VINs per call, charged per VIN, partial results, per-VIN error
-  envelopes, idempotency. Self-contained; post-launch item. See `API_REFERENCE.md` §decode/batch
-  and `claude.milestone3.md` §8/§15.
+### The one real remaining FEATURE
+- [x] **`POST /v1/decode/batch`** (L8) — DONE 2026-07-17. Replaced the `501` stub with the real
+  endpoint: 1..50 VINs, each decoded + charged INDEPENDENTLY via the same charging law as
+  `/decode` (hit=1 credit, parse-only/invalid free), partial results (per-VIN error envelopes),
+  batch-level `Idempotency-Key`, sequential guarded charges (can't overspend). Extracted a shared
+  `decodeCore` so single + batch share ONE decode path. `invalid_request` (422) added for a
+  malformed batch body. Docs synced (`API_REFERENCE.md`), unit test for the schema, smoke-script
+  batch checks added. Backend typecheck + build + `npm test` (8 pass) clean.
 
 ### Launch — needs prod creds / operator's hands (detail in "M3 LAUNCH plan" below)
 - [ ] L1 apply `m3.sql` (+ `m2.sql` if older) to prod DB
@@ -276,5 +279,6 @@ Steps in order (☑ = done in-repo this session; ☐ = needs prod creds / your h
   balance rises; replay the webhook and confirm it's a no-op.
 - [ ] **L7 — ops:** cron `npm run logs:prune` (180-day retention); seed a launch promo via
   `POST /api/v1/admin/promo`; confirm `/developers` renders live packs from `/billing/packs`.
-- [ ] **L8 (next feature, post-launch):** implement `POST /v1/decode/batch` (currently a 501 stub
-  with a frozen contract — up to 50 VINs, charged per VIN, partial results).
+- [x] **L8 (next feature):** `POST /v1/decode/batch` — IMPLEMENTED 2026-07-17 (see the
+  "What's left" tracker at the top of this file). Was a 501 stub; now up to 50 VINs, charged
+  per VIN, partial results, batch-level idempotency.
