@@ -27,6 +27,23 @@ the dense build journal + launch runbook (L1–L8) are below and remain authorit
   malformed batch body. Docs synced (`API_REFERENCE.md`), unit test for the schema, smoke-script
   batch checks added. Backend typecheck + build + `npm test` (8 pass) clean.
 
+### Chapa billing — test-mode ready (2026-07-17)
+- [x] Reviewed the live Chapa integration against developer.chapa.co — `initialize`/`verify`/webhook
+  all match the current contract (dual-header HMAC: `chapa-signature`=HMAC(secret,secret),
+  `x-chapa-signature`=HMAC(secret,payload); we accept either).
+- [x] **Fixed a real bug:** `return_url` was built from `PUBLIC_API_BASE_URL` (API origin) but
+  `/dashboard/api` is a `web/` route → post-checkout redirect 404'd. Now uses new `PUBLIC_WEB_URL`
+  (portal origin), fallback to FRONTEND_URL[0] then API base.
+- [x] Doc-aligned enhancements: branded `customization` (title/description) + optional
+  `phone_number`/`callback_url` on initialize; `isTestMode()` (CHASECK_TEST- detection) surfaced as
+  `test_mode`/`billing_enabled` on `/billing/packs` + `/billing/checkout`; portal Billing tab shows a
+  **sandbox badge** with the test card/number.
+- [x] Full test-mode walkthrough in `LAUNCH.md` ("Testing Chapa in test mode") — test key, test
+  cards/numbers, the **return-poll settles without a public webhook** (local testing needs no tunnel),
+  optional webhook-via-tunnel, going live. Backend typecheck+build+tests + web typecheck clean.
+- [ ] **Operator:** drop a `CHASECK_TEST-` key + `PUBLIC_WEB_URL` into `backend/.env`, run a
+  throwaway DB (`RUN_DB_TESTS=1 npm test` for money-safety), and complete one sandbox payment.
+
 ### Launch — needs prod creds / operator's hands (detail in "M3 LAUNCH plan" below)
 - [ ] L1 apply `m3.sql` (+ `m2.sql` if older) to prod DB
 - [ ] L2 set prod env (`CHAPA_SECRET_KEY`, `CHAPA_WEBHOOK_SECRET`, `PUBLIC_API_BASE_URL`, `FRONTEND_URL`)

@@ -302,13 +302,20 @@ function BillingTab({ focusTx }: { focusTx: string | null }) {
   const [busyPack, setBusyPack] = useState("");
   const [promo, setPromo] = useState("");
   const [promoBusy, setPromoBusy] = useState(false);
+  const [testMode, setTestMode] = useState(false);
 
   const loadHistory = useCallback(() => {
     devApi.history().then(setHistory).catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    devApi.packs().then((r) => setPacks(r.packs)).catch((e) => setError(e instanceof ApiError ? e.message : "Failed to load packs."));
+    devApi
+      .packs()
+      .then((r) => {
+        setPacks(r.packs);
+        setTestMode(r.test_mode);
+      })
+      .catch((e) => setError(e instanceof ApiError ? e.message : "Failed to load packs."));
     loadHistory();
   }, [loadHistory]);
 
@@ -376,6 +383,14 @@ function BillingTab({ focusTx }: { focusTx: string | null }) {
           <p className="text-display font-bold text-brand-600">{history?.balance ?? "—"} <span className="text-body font-normal text-fg-muted">credits</span></p>
         </div>
       </div>
+
+      {testMode && (
+        <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-body text-warning">
+          <strong>Sandbox / test mode.</strong> Payments use Chapa test credentials — no real money moves.
+          Pay with test card <span className="font-mono">4200 0000 0000 0000</span> (CVV 123, exp 12/34) or a test
+          telebirr number like <span className="font-mono">0900123456</span>.
+        </p>
+      )}
 
       <div>
         <h2 className="text-title text-fg">Buy credits</h2>

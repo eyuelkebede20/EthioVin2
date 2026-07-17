@@ -492,10 +492,26 @@ copied into `web/`, make it a build step, not a manual copy.
 
 ## 11. Environment variables (`backend/.env` additions)
 
-- `CHAPA_SECRET_KEY` — Chapa API secret (initialize + verify calls).
+- `CHAPA_SECRET_KEY` — Chapa API secret (initialize + verify calls). A `CHASECK_TEST-` key runs
+  **test/sandbox mode** (no real money; `chapaService.isTestMode()` surfaces this to the portal
+  as a badge); a `CHASECK-` key is live. Test vs live is decided purely by this key — no flag.
 - `CHAPA_WEBHOOK_SECRET` — the webhook signature secret (Chapa dashboard "secret hash").
-- `PUBLIC_API_BASE_URL` — e.g. `https://api.ethiovin.com` or the main host; used for
-  `doc_url` fields in error payloads and the Chapa `return_url`.
+  Optional for local testing: the billing tab's return-poll (`GET /billing/purchase/:txRef` →
+  `settlePurchase` → authoritative verify) settles a purchase even when no webhook can reach the box.
+- `PUBLIC_API_BASE_URL` — e.g. `https://api.ethiovin.com`; used for `doc_url` fields in error payloads.
+- `PUBLIC_WEB_URL` — the **web portal** origin (where `/dashboard/api` lives). The Chapa
+  `return_url` redirects the browser here after checkout, NOT to the API. Falls back to the first
+  `FRONTEND_URL` origin, then `PUBLIC_API_BASE_URL`. (Fixes a real bug: the return_url used to be
+  built from the API base, so the post-checkout redirect 404'd unless the portal shared that host.)
+
+**Chapa test-mode contract (verified against developer.chapa.co, 2026-07):** `/transaction/initialize`
+requires `amount`+`currency`+`tx_ref`+`email` (we send all four) and accepts optional
+`first_name`/`last_name`/`phone_number`/`callback_url`/`return_url`/`customization`; the webhook is a
+POST carrying `chapa-signature` (= HMAC-SHA256 of the *secret* keyed by the secret) and
+`x-chapa-signature` (= HMAC-SHA256 of the *payload* keyed by the secret) — `verifyWebhookSignature`
+accepts either. Test cards (Visa `4200 0000 0000 0000`, CVV 123, exp 12/34) and test telebirr/CBE
+numbers (`0900123456`, `0900112233`, `0900881111`) complete a sandbox payment. See `LAUNCH.md` →
+"Testing Chapa in test mode" for the full step-by-step.
 
 No key-hashing pepper (§4 explains why). Missing Chapa vars should disable billing routes
 with a clear 503 log line at boot rather than crashing the whole app — decoding must keep

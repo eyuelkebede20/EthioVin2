@@ -4,7 +4,7 @@ import { db } from "../db/index.ts";
 import { apiKey, creditPurchase, promoCode, promoRedemption, credit_ledger } from "../db/schema.ts";
 import { AppError } from "../middleware/errorHandler.ts";
 import * as creditBridge from "../services/creditBridge.ts";
-import { chapaConfigured, initializePayment, verifyPayment, verifyWebhookSignature } from "../services/chapaService.ts";
+import { chapaConfigured, isTestMode, initializePayment, verifyPayment, verifyWebhookSignature } from "../services/chapaService.ts";
 import { redeemPromo as redeemPromoService, PromoError } from "../services/promoService.ts";
 import { checkoutSchema, promoRedeemSchema } from "../utils/validation.ts";
 import { PAID_RATE_LIMIT_PER_MIN } from "../lib/pricing.ts";
@@ -17,6 +17,10 @@ export const listPacks = async (_req: Request, res: Response) => {
   const { packs } = await getPricingConfig();
   return res.json({
     currency: "ETB",
+    // billing_enabled: false when no Chapa key is set (checkout returns 503). test_mode:
+    // true when a CHASECK_TEST- key is configured, so the portal can show a sandbox badge.
+    billing_enabled: chapaConfigured(),
+    test_mode: isTestMode(),
     packs: packs.map((p) => ({ pack_id: p.packId, credits: p.credits, price_etb: p.priceEtb, note: p.note })),
   });
 };
@@ -39,11 +43,28 @@ export const checkout = async (req: Request, res: Response) => {
     status: "pending",
   });
 
-  const base = (process.env.PUBLIC_API_BASE_URL ?? (process.env.FRONTEND_URL ?? "").split(",")[0] ?? "").replace(/\/+$/, "");
-  const returnUrl = `${base}/dashboard/api?tab=billing&tx=${encodeURIComponent(txRef)}`;
-  const { checkoutUrl } = await initializePayment({ amount: pack.priceEtb, txRef, email: req.user!.email, returnUrl });
+  // return_url is a BROWSER redirect to the web portal's billing tab (a web/ route,
+  // NOT the API). Use PUBLIC_WEB_URL (the portal origin); fall back to the first
+  // FRONTEND_URL origin, then the API base as a last resort. The billing tab reads
+  // ?tx= and polls GET /billing/purchase/:txRef, which re-verifies + settles — so the
+  // whole flow works even without a public webhook (essential for local test mode).
+  const webBase = (
+    process.env.PUBLIC_WEB_URL ??
+    (process.env.FRONTEND_URL ?? "").split(",")[0] ??
+    process.env.PUBLIC_API_BASE_URL ??
+    ""
+  ).replace(/\/+$/, "");
+  const returnUrl = `${webBase}/dashboard/api?tab=billing&tx=${encodeURIComponent(txRef)}`;
+  const { checkoutUrl } = await initializePayment({
+    amount: pack.priceEtb,
+    txRef,
+    returnUrl,
+    email: req.user!.email,
+    title: "EthioVin",
+    description: `${pack.credits} API credits (${pack.packId})`,
+  });
 
-  return res.json({ checkout_url: checkoutUrl, tx_ref: txRef });
+  return res.json({ checkout_url: checkoutUrl, tx_ref: txRef, test_mode: isTestMode() });
 };
 
 /**

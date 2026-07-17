@@ -16,25 +16,50 @@ function secretKey(): string {
   return k;
 }
 
-/** Initialize a checkout; returns the hosted payment URL. */
+/** True when running against a Chapa TEST secret key (CHASECK_TEST-…). */
+export function isTestMode(): boolean {
+  return (process.env.CHAPA_SECRET_KEY ?? "").includes("_TEST");
+}
+
+/**
+ * Initialize a checkout; returns the hosted payment URL. Fields follow Chapa's
+ * /transaction/initialize contract: amount + currency + tx_ref + email are required;
+ * first_name/last_name/phone_number/return_url/callback_url/customization are optional.
+ * Test vs live is decided purely by the secret key — no per-call flag.
+ */
 export async function initializePayment(args: {
   amount: number;
   txRef: string;
   email?: string | undefined;
   firstName?: string | undefined;
+  lastName?: string | undefined;
+  phoneNumber?: string | undefined;
   returnUrl: string;
+  callbackUrl?: string | undefined;
+  title?: string | undefined;
+  description?: string | undefined;
 }): Promise<{ checkoutUrl: string }> {
+  const body: Record<string, unknown> = {
+    amount: String(args.amount),
+    currency: "ETB",
+    tx_ref: args.txRef,
+    return_url: args.returnUrl,
+    email: args.email,
+    first_name: args.firstName,
+    last_name: args.lastName,
+  };
+  // Optional fields — only send when present (Chapa validates phone/format when given).
+  if (args.phoneNumber) body.phone_number = args.phoneNumber;
+  if (args.callbackUrl) body.callback_url = args.callbackUrl;
+  if (args.title || args.description) {
+    // customization.title has a short limit on Chapa's side — keep it a brand word.
+    body.customization = { title: (args.title ?? "EthioVin").slice(0, 16), description: args.description ?? "" };
+  }
+
   const res = await fetch(`${CHAPA_BASE}/transaction/initialize`, {
     method: "POST",
     headers: { Authorization: `Bearer ${secretKey()}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      amount: String(args.amount),
-      currency: "ETB",
-      tx_ref: args.txRef,
-      return_url: args.returnUrl,
-      email: args.email,
-      first_name: args.firstName,
-    }),
+    body: JSON.stringify(body),
   });
   const data = (await res.json().catch(() => null)) as { status?: string; data?: { checkout_url?: string }; message?: string } | null;
   if (!res.ok || data?.status !== "success" || !data.data?.checkout_url) {

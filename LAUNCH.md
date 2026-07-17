@@ -103,7 +103,62 @@ Watch the Actions run to green. The Passenger restart is automatic (the workflow
 ## L6 — Real Chapa test-mode payment
 
 Checkout a credit pack in the portal → complete on Chapa (test mode) → webhook grants credits
-**once** → balance rises. Replay the webhook and confirm it's a **no-op** (idempotent).
+**once** → balance rises. Replay the webhook and confirm it's a **no-op** (idempotent). Full
+sandbox walkthrough below — it needs **no real money and no live merchant account.**
+
+---
+
+# Testing Chapa in test mode (no real money)
+
+Chapa's test/sandbox mode is enabled purely by using a **test secret key** — there is no separate
+base URL or flag. You can run the entire buy-credits flow end-to-end for free.
+
+## 1. Get a test key
+Chapa dashboard → **Settings → API Keys** → copy the **test secret key** (starts with
+`CHASECK_TEST-`). Set it in `backend/.env`:
+
+```
+CHAPA_SECRET_KEY=CHASECK_TEST-xxxxxxxxxxxxxxxxxxxx
+PUBLIC_WEB_URL=http://localhost:3001          # the Next portal origin (where /dashboard/api lives)
+# CHAPA_WEBHOOK_SECRET can stay empty for local testing — see step 4.
+```
+
+Restart the backend. `GET /api/v1/dev/billing/packs` now returns `"test_mode": true`, and the
+portal's Billing tab shows a **sandbox badge** with the test card/number to use.
+
+## 2. Run the flow
+1. Sign in to the portal (`web/`, e.g. `http://localhost:3001`), open **Dashboard → API → Billing**.
+2. Click **Buy** on a pack → you're redirected to Chapa's hosted checkout.
+3. Pay with a **test credential** (no real charge):
+   - **Card:** Visa `4200 0000 0000 0000`, CVV `123`, expiry `12/34`
+     (also Mastercard `5400 0000 0000 0000`, Amex `3700 0000 0000 0000` CVV `1234`).
+   - **Mobile money (telebirr / CBE Birr / etc.):** number `0900123456` (or `0900112233`,
+     `0900881111`). These are the **success** numbers; any other number returns `failed`.
+     Awash/Amole ask for an OTP → use `12345`. telebirr/CBEBirr need no OTP.
+4. Chapa redirects the browser back to `…/dashboard/api?tab=billing&tx=<txRef>`. The Billing tab
+   **polls** `GET /billing/purchase/:txRef`, which re-verifies with Chapa and settles the purchase.
+   Within a few seconds you see **"Payment confirmed — N credits added"** and the balance rises.
+
+## 3. What to verify
+- Balance increased by exactly the pack's credits; the purchase shows `paid` in **History**.
+- Repeat: the **first** purchase also bumps every active key from the free RPM to the paid RPM.
+- Idempotency: settling the same `tx_ref` twice never double-credits (the `paid` state + unique
+  `chapa_tx_ref` guard). Re-hitting the return URL is a safe no-op.
+
+## 4. Webhook (optional locally, required in prod)
+The return-page poll (step 2.4) settles the purchase **without** a webhook, which is why local
+testing needs no public URL. To exercise the real webhook path:
+- Expose the backend with a tunnel (e.g. `cloudflared tunnel --url http://localhost:3000` or ngrok).
+- Chapa dashboard → **Webhooks** → set the URL to `https://<tunnel>/api/v1/dev/billing/webhook`
+  and copy the **secret hash** into `CHAPA_WEBHOOK_SECRET`; restart the backend.
+- Pay again. Chapa POSTs the event with `chapa-signature` + `x-chapa-signature` headers;
+  `verifyWebhookSignature` accepts either HMAC. The handler always returns `200` (so Chapa stops
+  retrying) and settlement is idempotent, so the poll + webhook can both fire harmlessly.
+
+## 5. Going live
+Swap `CHAPA_SECRET_KEY` for the **live** key (`CHASECK-…`), point `CHAPA_WEBHOOK_SECRET` at the
+live webhook secret, and set `PUBLIC_WEB_URL`/`PUBLIC_API_BASE_URL` to the real origins. Nothing
+else changes — same endpoints, same code path.
 
 ## L7 — Ops
 
