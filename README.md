@@ -226,10 +226,11 @@ config). Running `src/index.ts` in prod crashes — no `node_modules` are shippe
 
 ### Launch status
 
-M2/M3 are code-complete but **not in production**. The remaining launch steps (apply `m3.sql` to
-prod, set Chapa env, pin Passenger to one instance, merge `milestone-2` → `main`, live smoke test,
-real Chapa test payment) are tracked in **[`tasks.md`](./tasks.md)** under "M3 LAUNCH plan". They
-need production credentials and are the operator's to run.
+M2/M3 are code-complete but **not in production**. The exact ordered launch sequence (apply
+`m3.sql` to prod, set Chapa env, pin Passenger, merge `milestone-2` → `main`, live smoke test,
+real Chapa test payment, ops) is the copy-paste runbook **[`LAUNCH.md`](./LAUNCH.md)**. The whole
+`milestone-2 → main` diff is additive (verified — no destructive DDL). These steps need production
+credentials and are the operator's to run.
 
 ---
 
@@ -244,6 +245,7 @@ need production credentials and are the operator's to run.
 | [`claude.milestone3.md`](./claude.milestone3.md) | M3 detail — API keys, credit metering, Chapa billing, promo codes |
 | [`MILESTONE_2_PLAN.md`](./MILESTONE_2_PLAN.md) | The M2 CEO plan + 11-section review |
 | [`claude.report.md`](./claude.report.md) | M2/M3 progress report — what shipped, what's stubbed, handoffs |
+| [`LAUNCH.md`](./LAUNCH.md) | The ordered production launch runbook (schema → env → merge → smoke → payment → ops) |
 | [`web/DESIGN.md`](./web/DESIGN.md) | The `web/` design-system token reference |
 | [`tasks.md`](./tasks.md) | Build journal + the live launch checklist |
 
