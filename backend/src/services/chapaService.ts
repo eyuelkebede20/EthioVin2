@@ -6,8 +6,20 @@ import { AppError } from "../middleware/errorHandler.ts";
 
 const CHAPA_BASE = "https://api.chapa.co/v1";
 
+/**
+ * DEV-ONLY simulated billing. Active ONLY when `BILLING_MOCK_MODE=1` AND no real
+ * `CHAPA_SECRET_KEY` is set — so a real key (test OR live) always wins and prod (which
+ * always sets a key) can never accidentally mock. Lets you exercise the FULL buy→settle→
+ * credit flow with zero Chapa account: `initializePayment` returns the return_url directly
+ * (browser bounces back to the billing tab, which polls + settles), and `verifyPayment`
+ * reports paid. It NEVER touches Chapa's servers. Never set this in production.
+ */
+export function billingMockMode(): boolean {
+  return process.env.BILLING_MOCK_MODE === "1" && !process.env.CHAPA_SECRET_KEY;
+}
+
 export function chapaConfigured(): boolean {
-  return !!process.env.CHAPA_SECRET_KEY;
+  return !!process.env.CHAPA_SECRET_KEY || billingMockMode();
 }
 
 function secretKey(): string {
@@ -16,9 +28,9 @@ function secretKey(): string {
   return k;
 }
 
-/** True when running against a Chapa TEST secret key (CHASECK_TEST-…). */
+/** True in a sandbox: a Chapa TEST key (CHASECK_TEST-…) or the local mock mode. */
 export function isTestMode(): boolean {
-  return (process.env.CHAPA_SECRET_KEY ?? "").includes("_TEST");
+  return billingMockMode() || (process.env.CHAPA_SECRET_KEY ?? "").includes("_TEST");
 }
 
 /**
@@ -39,6 +51,13 @@ export async function initializePayment(args: {
   title?: string | undefined;
   description?: string | undefined;
 }): Promise<{ checkoutUrl: string }> {
+  // Mock mode: skip Chapa entirely — send the browser straight back to the billing
+  // tab, which polls GET /billing/purchase/:txRef → settlePurchase → (mock) verify → grant.
+  if (billingMockMode()) {
+    console.warn(`[chapa] BILLING_MOCK_MODE — simulating checkout for ${args.txRef} (no real payment).`);
+    return { checkoutUrl: args.returnUrl };
+  }
+
   const body: Record<string, unknown> = {
     amount: String(args.amount),
     currency: "ETB",
@@ -71,6 +90,10 @@ export async function initializePayment(args: {
 
 /** Authoritative verify — the webhook alone is spoofable, this call is the source of truth. */
 export async function verifyPayment(txRef: string): Promise<{ paid: boolean; amount: number; currency: string }> {
+  // Mock mode: every simulated tx verifies as paid (settlePurchase grants the DB row's
+  // credits, so amount here is unused). Dev-only; see billingMockMode().
+  if (billingMockMode()) return { paid: true, amount: 0, currency: "ETB" };
+
   const res = await fetch(`${CHAPA_BASE}/transaction/verify/${encodeURIComponent(txRef)}`, {
     headers: { Authorization: `Bearer ${secretKey()}` },
   });

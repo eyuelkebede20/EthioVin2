@@ -108,10 +108,37 @@ sandbox walkthrough below — it needs **no real money and no live merchant acco
 
 ---
 
+# Testing billing without any Chapa account (zero signup)
+
+Chapa does **not** publish a shared public test key — each account gets its own. You only need a
+**free Chapa account** (email signup) to get a `CHASECK_TEST-` test key, though: test mode is
+available **before** you complete business compliance (compliance gates *live* mode only). So no
+registered business is required to test.
+
+If you can't even do that signup yet, use the built-in **mock mode** to exercise the full
+buy → settle → credits flow locally with no Chapa at all:
+
+```
+# backend/.env
+BILLING_MOCK_MODE=1
+CHAPA_SECRET_KEY=              # leave EMPTY — a real key always overrides mock
+PUBLIC_WEB_URL=http://localhost:3001
+```
+
+Restart the backend. In the portal's **Billing** tab you'll see a *"Simulated billing"* badge.
+Click **Buy** → you're bounced straight back to the billing tab → the return-poll settles the
+purchase → **credits are granted**. This tests everything on our side (purchase row, settlement,
+idempotency, credit grant, first-purchase RPM bump, balance). Mock mode is gated so it can **never**
+activate in production: it's off unless `BILLING_MOCK_MODE=1` **and** no real `CHAPA_SECRET_KEY` is
+set (and prod always sets a key). To also cover the money-safety races, run
+`RUN_DB_TESTS=1 npm test` against a throwaway DB.
+
+---
+
 # Testing Chapa in test mode (no real money)
 
-Chapa's test/sandbox mode is enabled purely by using a **test secret key** — there is no separate
-base URL or flag. You can run the entire buy-credits flow end-to-end for free.
+Once you have a Chapa account, its test/sandbox mode is enabled purely by using a **test secret
+key** — there is no separate base URL or flag. You can run the entire buy-credits flow for free.
 
 ## 1. Get a test key
 Chapa dashboard → **Settings → API Keys** → copy the **test secret key** (starts with

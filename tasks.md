@@ -41,8 +41,13 @@ the dense build journal + launch runbook (L1–L8) are below and remain authorit
 - [x] Full test-mode walkthrough in `LAUNCH.md` ("Testing Chapa in test mode") — test key, test
   cards/numbers, the **return-poll settles without a public webhook** (local testing needs no tunnel),
   optional webhook-via-tunnel, going live. Backend typecheck+build+tests + web typecheck clean.
-- [ ] **Operator:** drop a `CHASECK_TEST-` key + `PUBLIC_WEB_URL` into `backend/.env`, run a
-  throwaway DB (`RUN_DB_TESTS=1 npm test` for money-safety), and complete one sandbox payment.
+- [x] **Zero-signup mock mode:** `BILLING_MOCK_MODE=1` (with no real Chapa key) simulates the whole
+  buy→settle→credit flow locally — no Chapa account needed. Gated so it can NEVER run in prod (a real
+  key always overrides). Unit-tested. Chapa docs confirm: test mode needs only a free account, not a
+  registered business (compliance gates live mode only).
+- [ ] **Operator:** to test, either set `BILLING_MOCK_MODE=1` (+ `PUBLIC_WEB_URL`) for the offline
+  mock, OR drop a free `CHASECK_TEST-` key in `backend/.env`; run a throwaway DB
+  (`RUN_DB_TESTS=1 npm test`) and complete one sandbox purchase.
 
 ### Launch — needs prod creds / operator's hands (detail in "M3 LAUNCH plan" below)
 - [ ] L1 apply `m3.sql` (+ `m2.sql` if older) to prod DB

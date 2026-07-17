@@ -4,7 +4,7 @@ import { db } from "../db/index.ts";
 import { apiKey, creditPurchase, promoCode, promoRedemption, credit_ledger } from "../db/schema.ts";
 import { AppError } from "../middleware/errorHandler.ts";
 import * as creditBridge from "../services/creditBridge.ts";
-import { chapaConfigured, isTestMode, initializePayment, verifyPayment, verifyWebhookSignature } from "../services/chapaService.ts";
+import { chapaConfigured, isTestMode, billingMockMode, initializePayment, verifyPayment, verifyWebhookSignature } from "../services/chapaService.ts";
 import { redeemPromo as redeemPromoService, PromoError } from "../services/promoService.ts";
 import { checkoutSchema, promoRedeemSchema } from "../utils/validation.ts";
 import { PAID_RATE_LIMIT_PER_MIN } from "../lib/pricing.ts";
@@ -21,6 +21,7 @@ export const listPacks = async (_req: Request, res: Response) => {
     // true when a CHASECK_TEST- key is configured, so the portal can show a sandbox badge.
     billing_enabled: chapaConfigured(),
     test_mode: isTestMode(),
+    mock_mode: billingMockMode(),
     packs: packs.map((p) => ({ pack_id: p.packId, credits: p.credits, price_etb: p.priceEtb, note: p.note })),
   });
 };
@@ -64,7 +65,7 @@ export const checkout = async (req: Request, res: Response) => {
     description: `${pack.credits} API credits (${pack.packId})`,
   });
 
-  return res.json({ checkout_url: checkoutUrl, tx_ref: txRef, test_mode: isTestMode() });
+  return res.json({ checkout_url: checkoutUrl, tx_ref: txRef, test_mode: isTestMode(), mock_mode: billingMockMode() });
 };
 
 /**

@@ -303,6 +303,7 @@ function BillingTab({ focusTx }: { focusTx: string | null }) {
   const [promo, setPromo] = useState("");
   const [promoBusy, setPromoBusy] = useState(false);
   const [testMode, setTestMode] = useState(false);
+  const [mockMode, setMockMode] = useState(false);
 
   const loadHistory = useCallback(() => {
     devApi.history().then(setHistory).catch(() => undefined);
@@ -314,6 +315,7 @@ function BillingTab({ focusTx }: { focusTx: string | null }) {
       .then((r) => {
         setPacks(r.packs);
         setTestMode(r.test_mode);
+        setMockMode(r.mock_mode);
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "Failed to load packs."));
     loadHistory();
@@ -384,13 +386,19 @@ function BillingTab({ focusTx }: { focusTx: string | null }) {
         </div>
       </div>
 
-      {testMode && (
+      {mockMode ? (
+        <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-body text-warning">
+          <strong>Simulated billing (mock mode).</strong> No Chapa account is connected — clicking <em>Buy</em>
+          {" "}instantly credits your account so you can test the flow end to end. There is no real payment page
+          and no money moves. Turn this off (unset <span className="font-mono">BILLING_MOCK_MODE</span>) in production.
+        </p>
+      ) : testMode ? (
         <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-body text-warning">
           <strong>Sandbox / test mode.</strong> Payments use Chapa test credentials — no real money moves.
           Pay with test card <span className="font-mono">4200 0000 0000 0000</span> (CVV 123, exp 12/34) or a test
           telebirr number like <span className="font-mono">0900123456</span>.
         </p>
-      )}
+      ) : null}
 
       <div>
         <h2 className="text-title text-fg">Buy credits</h2>

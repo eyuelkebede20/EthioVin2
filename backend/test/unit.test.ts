@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { generateRawKey, sha256hex, resolveApiKey, LIVE_PREFIX, TEST_PREFIX } from "../src/services/apiKeyService.ts";
-import { verifyWebhookSignature } from "../src/services/chapaService.ts";
+import { verifyWebhookSignature, billingMockMode, chapaConfigured, isTestMode, initializePayment, verifyPayment } from "../src/services/chapaService.ts";
 import { generatePromoCode } from "../src/services/promoService.ts";
 import { getPack, CREDIT_PACKS, SIGNUP_GRANT_CREDITS } from "../src/lib/pricing.ts";
 import { newRequestId, nano } from "../src/utils/id.ts";
@@ -80,6 +80,41 @@ test("parseVin: rejects non-17, keeps I/O/Q, correct slices", () => {
   assert.equal(p.wmi, "LCO");
   assert.equal(p.vds_code, "CE4CB");
   assert.ok(p.keyVin.includes("O"), "O is preserved (ASEAN VIN)");
+});
+
+// --- Billing mock mode (dev-only simulated payments) -------------------------
+test("billingMockMode: on only with BILLING_MOCK_MODE=1 AND no real Chapa key", async () => {
+  const saveMock = process.env.BILLING_MOCK_MODE;
+  const saveKey = process.env.CHAPA_SECRET_KEY;
+  try {
+    // Off by default.
+    delete process.env.BILLING_MOCK_MODE;
+    delete process.env.CHAPA_SECRET_KEY;
+    assert.equal(billingMockMode(), false);
+    assert.equal(chapaConfigured(), false, "no key + no mock => billing disabled");
+
+    // A real key ALWAYS wins — mock can never shadow it (prod safety).
+    process.env.BILLING_MOCK_MODE = "1";
+    process.env.CHAPA_SECRET_KEY = "CHASECK-live-xxxx";
+    assert.equal(billingMockMode(), false, "real key present => never mock");
+    assert.equal(isTestMode(), false, "a live key is not test mode");
+
+    // Mock active: flag set AND no key.
+    delete process.env.CHAPA_SECRET_KEY;
+    assert.equal(billingMockMode(), true);
+    assert.equal(chapaConfigured(), true, "mock counts as configured (no 503)");
+    assert.equal(isTestMode(), true, "mock is a sandbox");
+
+    // In mock mode, initialize returns the return_url (no Chapa call) and verify reports paid.
+    const { checkoutUrl } = await initializePayment({ amount: 100, txRef: "evnp_test", returnUrl: "http://localhost:3001/dashboard/api?tab=billing&tx=evnp_test" });
+    assert.equal(checkoutUrl, "http://localhost:3001/dashboard/api?tab=billing&tx=evnp_test");
+    const v = await verifyPayment("evnp_test");
+    assert.equal(v.paid, true);
+  } finally {
+    // Restore env so other tests / the process are unaffected.
+    if (saveMock === undefined) delete process.env.BILLING_MOCK_MODE; else process.env.BILLING_MOCK_MODE = saveMock;
+    if (saveKey === undefined) delete process.env.CHAPA_SECRET_KEY; else process.env.CHAPA_SECRET_KEY = saveKey;
+  }
 });
 
 // --- Batch decode body validation (1..50 VINs) -------------------------------
