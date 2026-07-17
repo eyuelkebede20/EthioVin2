@@ -45,12 +45,19 @@ the dense build journal + launch runbook (L1–L8) are below and remain authorit
   buy→settle→credit flow locally — no Chapa account needed. Gated so it can NEVER run in prod (a real
   key always overrides). Unit-tested. Chapa docs confirm: test mode needs only a free account, not a
   registered business (compliance gates live mode only).
-- [ ] **Operator:** to test, either set `BILLING_MOCK_MODE=1` (+ `PUBLIC_WEB_URL`) for the offline
-  mock, OR drop a free `CHASECK_TEST-` key in `backend/.env`; run a throwaway DB
-  (`RUN_DB_TESTS=1 npm test`) and complete one sandbox purchase.
+- [x] **Proven end-to-end (2026-07-18):** ran the whole flow via API on an isolated throwaway DB
+  (never prod) — signup grant 25 → buy 200-credit pack (mock) → balance 225 → idempotent re-settle
+  stays 225. Test DB dropped after.
+
+### Push + merge status (2026-07-18)
+- [x] All 5 commits **pushed to `origin/milestone-2`** (docs, batch, LAUNCH, Chapa test-mode, mock).
+- [x] Prod probe: M1 API live (`/health` 200); `/v1` NOT deployed (404). So merge is gated on L1.
+- [ ] **DECISION (user): schema-first, then merge.** Next: user applies `m2.sql`+`m3.sql` to the
+  **prod** DB (L1) → confirms → then merge `milestone-2 → main`. Local `.env` points at localhost, so
+  the prod schema apply is on the user's side (cPanel phpPgAdmin or remote psql).
 
 ### Launch — needs prod creds / operator's hands (detail in "M3 LAUNCH plan" below)
-- [ ] L1 apply `m3.sql` (+ `m2.sql` if older) to prod DB
+- [ ] L1 apply `m2.sql` (M1 prod predates M2) + `m3.sql` to prod DB  ← **the gate before merge**
 - [ ] L2 set prod env (`CHAPA_SECRET_KEY`, `CHAPA_WEBHOOK_SECRET`, `PUBLIC_API_BASE_URL`, `FRONTEND_URL`)
 - [ ] L3 pin Passenger to 1 instance (in-memory rate limiters)
 - [ ] L4 merge `milestone-2` → `main` (fires full CI deploy — review the additive diff first)

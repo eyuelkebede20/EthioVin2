@@ -169,3 +169,44 @@ same Postgres, same `web/`; **one shared credit balance** with M2 (no second wal
 ## New env vars (backend/.env)
 `CHAPA_SECRET_KEY`, `CHAPA_WEBHOOK_SECRET`, `PUBLIC_API_BASE_URL` (see `claude.milestone3.md` §11);
 optional `DB_POOL_MAX`, `LOG_RETENTION_DAYS`. Missing Chapa vars disable billing (503), not decode.
+
+---
+
+# EthioVin — post-M3 hardening + launch prep (2026-07-18)
+
+Session focused on documentation, the last real feature, and making billing testable. All on
+`milestone-2` (pushed).
+
+## Shipped
+- **Docs front door:** root `README.md` (was missing), `backend/.env.example` + `client/.env.example`,
+  hardened `.gitignore` (real `.env` files were unprotected), and `LAUNCH.md` — the ordered prod
+  runbook (verified the `milestone-2 → main` diff is fully additive: no DROP/ALTER-DROP/TRUNCATE).
+- **`POST /v1/decode/batch`** (was a 501 stub): 1..50 VINs, each decoded + charged independently
+  (same charging law as `/decode`), partial results, batch-level idempotency, sequential guarded
+  charges. Shares a new `decodeCore` with `/decode` (one decode path). `invalid_request` (422) added.
+- **Chapa test-mode + a real bug fix:** the `return_url` was built from the API origin but
+  `/dashboard/api` is a `web/` route → post-checkout redirect 404'd; now uses `PUBLIC_WEB_URL`.
+  Added `isTestMode()` + branded `customization`; reviewed the integration against Chapa's live docs
+  (initialize/verify/dual-header webhook HMAC all match).
+- **Zero-signup `BILLING_MOCK_MODE`:** simulates the full buy→settle→credit flow with no Chapa
+  account; gated so it can never activate in prod (a real key always wins). Unit-tested.
+
+## Verified
+- Backend typecheck + esbuild build + `npm test` (13, DB-integration behind `RUN_DB_TESTS=1`) clean;
+  `web/` typecheck + `next build` clean.
+- **Billing flow proven end-to-end** on a throwaway local DB (never prod): signup grant 25 →
+  buy 200-credit pack (mock) → balance 225 → idempotent re-settle stays 225.
+- Prod probe: M1 API live (`/health` 200); `/v1` not yet deployed (404) — merge is gated on
+  applying `m2.sql`+`m3.sql` to the prod DB first (LAUNCH.md L1).
+
+## Closed earlier handoffs (superseded)
+- ~~Pricing sign-off~~ — pricing is runtime-editable (`app_settings["pricing"]` / `/admin/pricing`).
+- ~~Demo VINs~~ — `/dev/demo` pulls real cached ledger rows.
+- ~~Batch decode~~ — implemented (above).
+
+## Remaining (operator's hands)
+- **L1 apply schema to prod**, then **merge `milestone-2 → main`** (fires the full deploy).
+- **L2 prod env:** `CHAPA_SECRET_KEY` (+ webhook secret), `PUBLIC_WEB_URL`, `PUBLIC_API_BASE_URL`.
+  Until then billing is 503 (decode works).
+- Confirm the `web/` portal is deployed + domain-mapped (the landing's developer links point at it).
+- New env vars this session: `PUBLIC_WEB_URL` (billing return origin), `BILLING_MOCK_MODE` (dev only).

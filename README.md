@@ -149,6 +149,8 @@ npm run dev                 # set VITE_BACKEND_URL
 | `CHAPA_SECRET_KEY` | M3 | Chapa checkout (missing → billing returns 503, decode still works) |
 | `CHAPA_WEBHOOK_SECRET` | M3 | Chapa webhook HMAC verification |
 | `PUBLIC_API_BASE_URL` | M3 | Public base URL used in API responses/docs |
+| `PUBLIC_WEB_URL` | M3 | Web-portal origin — where the Chapa `return_url` redirects after checkout (falls back to the first `FRONTEND_URL` origin) |
+| `BILLING_MOCK_MODE` | dev | `=1` (with **no** `CHAPA_SECRET_KEY`) simulates the buy→credit flow locally with no Chapa account. Never set in prod — a real key always overrides it |
 | `DB_POOL_MAX` | — | Postgres pool size (default 5) |
 | `LOG_RETENTION_DAYS` | — | `logs:prune` retention (default 180) |
 
