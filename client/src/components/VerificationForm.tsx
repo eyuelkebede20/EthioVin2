@@ -36,6 +36,9 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
   const [error, setError] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string>("");
+  // Why the photo picker is empty — surfaced instead of silently swallowed, so a
+  // failed image search (bad/missing SERPER key, no matches, network) is visible.
+  const [imageNotice, setImageNotice] = useState<string>("");
 
   // Unknown-WMI inline resolution.
   const isUnknownWmi = baseManufacturer === "Unknown";
@@ -78,15 +81,27 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
 
     setProcessing(true);
     setError("");
+    setImageNotice("");
     try {
-      const [{ draft }, imgResult] = await Promise.all([
+      // Fetch specs + photos together. The photo search is captured (not swallowed)
+      // so a failure shows a reason instead of an empty picker with no explanation.
+      const imgArgs = { manufacturer: finalManufacturer, year: finalYear, model: modelInput.trim() };
+      const [{ draft }, imgOutcome] = await Promise.all([
         generateDraft({ manufacturer: finalManufacturer, year: finalYear, model: modelInput.trim() }),
-        getVehicleImages({ manufacturer: finalManufacturer, year: finalYear, model: modelInput.trim() }).catch(() => ({ images: [] })),
+        getVehicleImages(imgArgs)
+          .then((r) => ({ ok: true as const, images: r.images }))
+          .catch((err) => ({ ok: false as const, images: [] as string[], err })),
       ]);
       setAiDraft(draft as DraftSpecs);
-      if (imgResult.images.length > 0) {
-        setImages(imgResult.images);
-        setSelectedImage(imgResult.images[0]!);
+      if (imgOutcome.images.length > 0) {
+        setImages(imgOutcome.images);
+        setSelectedImage(imgOutcome.images[0]!);
+      } else if (!imgOutcome.ok) {
+        setImageNotice(
+          `Couldn't load photos: ${imgOutcome.err instanceof ApiError ? imgOutcome.err.message : "image search failed"}. You can still save and add a photo later.`,
+        );
+      } else {
+        setImageNotice("No photos found for this make / model / year — you can save now and add one later.");
       }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to generate specifications.");
@@ -219,6 +234,13 @@ export default function VerificationForm({ scanData, onSuccess, onCancel }: Veri
           {error && <Banner variant="error">{error}</Banner>}
         </div>
       </div>
+
+      {/* Why the picker is empty (failed search / no matches) — visible, not silent. */}
+      {imageNotice && images.length === 0 && (
+        <div className="border-t pt-6 mb-8">
+          <Banner variant="info">{imageNotice}</Banner>
+        </div>
+      )}
 
       {/* Image picker */}
       {images.length > 0 && (
