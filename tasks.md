@@ -1,8 +1,39 @@
 # tasks.md — Claude's working note-taker / task journal
 
 > My scratch + progress notes (formerly note.claude.md). Not user-facing docs — the formal docs are
-> `CLAUDE.md`, `claude.milestone2.md`, `MILESTONE_2_PLAN.md`, `claude.report.md`. Keep per-task
-> progress, decisions, and gotchas here. Plan source: `MILESTONE_2_PLAN.md`; decisions also in memory.
+> `README.md` (human front door), `CLAUDE.md`, `claude.milestone2.md`, `MILESTONE_2_PLAN.md`,
+> `claude.report.md`. Keep per-task progress, decisions, and gotchas here. Plan source:
+> `MILESTONE_2_PLAN.md`; decisions also in memory.
+
+---
+
+## ▶ WHAT'S LEFT — actionable tracker (2026-07-17)
+
+State: M1/M2/M3 all code-complete on `milestone-2`. This is the current forward-looking list;
+the dense build journal + launch runbook (L1–L8) are below and remain authoritative for detail.
+
+### Documentation (the gap the review surfaced)
+- [x] **Root `README.md`** — human-facing front door (what/why, quickstart, architecture, env,
+  API pointer, deploy, doc map). Written 2026-07-17. The internal AI docs were thorough but
+  fragmented; there was no single entry point for a human dev. **CLOSED.**
+- [x] Documentation map updated to list `README.md` first (in README + this file).
+
+### The one real remaining FEATURE (I can build; needs your go-ahead)
+- [ ] **`POST /v1/decode/batch`** (L8) — replace the `501` stub in `publicRoutes.ts` with the
+  frozen contract: up to 50 VINs per call, charged per VIN, partial results, per-VIN error
+  envelopes, idempotency. Self-contained; post-launch item. See `API_REFERENCE.md` §decode/batch
+  and `claude.milestone3.md` §8/§15.
+
+### Launch — needs prod creds / operator's hands (detail in "M3 LAUNCH plan" below)
+- [ ] L1 apply `m3.sql` (+ `m2.sql` if older) to prod DB
+- [ ] L2 set prod env (`CHAPA_SECRET_KEY`, `CHAPA_WEBHOOK_SECRET`, `PUBLIC_API_BASE_URL`, `FRONTEND_URL`)
+- [ ] L3 pin Passenger to 1 instance (in-memory rate limiters)
+- [ ] L4 merge `milestone-2` → `main` (fires full CI deploy — review the additive diff first)
+- [ ] L5 live smoke test (`npm run smoke` + manual 402 path + `RUN_DB_TESTS=1 npm test` on throwaway DB)
+- [ ] L6 real Chapa test-mode payment end-to-end (checkout → webhook grants once → replay no-op)
+- [ ] L7 ops: cron `npm run logs:prune`, seed a launch promo, confirm `/developers` renders live packs
+
+---
 
 ## Post-loop additions (2026-06-25)
 - Super_admin payments toggle shipped (app_settings + settingsService; /payments/config + /admin/settings;
