@@ -7,7 +7,14 @@ import { IMPORT_COUNTRIES } from "../lib/constants";
 // walks through the process, and routes to /login. Signed-in users are redirected
 // past this by App.tsx. The developer portal (keys/usage/billing) lives in the
 // Next.js web/ app; here we describe the API and link out — see notes.md.
-const DEV_PORTAL_URL = "https://ethiovinapi.senaycreatives.com/developers";
+//
+// The portal is NOT deployed yet, and it will live on its OWN origin (a Next app),
+// never on the Express API host (ethiovinapi.senaycreatives.com serves JSON only —
+// that's why /developers/docs 404'd there). Leave this EMPTY until the web/ portal
+// has a real home, then set it to that origin (e.g. https://developers.senaycreatives.com)
+// to switch the portal + docs buttons back on. The empty string renders a "launching
+// soon" pill instead of a broken link.
+const DEV_PORTAL_URL = "";
 
 const COMMON_MAKES = ["Toyota", "Hyundai", "Suzuki", "Nissan", "BYD", "Isuzu", "Mitsubishi", "Kia"];
 
@@ -172,12 +179,20 @@ export default function LandingPage() {
               <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-400" /> Top up with Chapa (ETB) or a promo code</li>
             </ul>
             <div className="mt-8 flex flex-wrap gap-3">
-              <a href={DEV_PORTAL_URL} className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3 font-bold text-white shadow-lg shadow-orange-500/30 hover:from-orange-600 hover:to-amber-600">
-                Open the developer portal <ArrowRight className="h-4 w-4" />
-              </a>
-              <a href={`${DEV_PORTAL_URL}/docs`} className="inline-flex items-center gap-2 rounded-lg border border-white/25 px-6 py-3 font-bold text-white hover:border-orange-400 hover:text-orange-300">
-                Read the docs
-              </a>
+              {DEV_PORTAL_URL ? (
+                <>
+                  <a href={DEV_PORTAL_URL} className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3 font-bold text-white shadow-lg shadow-orange-500/30 hover:from-orange-600 hover:to-amber-600">
+                    Open the developer portal <ArrowRight className="h-4 w-4" />
+                  </a>
+                  <a href={`${DEV_PORTAL_URL}/docs`} className="inline-flex items-center gap-2 rounded-lg border border-white/25 px-6 py-3 font-bold text-white hover:border-orange-400 hover:text-orange-300">
+                    Read the docs
+                  </a>
+                </>
+              ) : (
+                <span className="inline-flex items-center gap-2 rounded-lg border border-white/25 px-6 py-3 font-bold text-slate-300">
+                  <Terminal className="h-4 w-4 text-orange-300" /> Developer API — launching soon
+                </span>
+              )}
             </div>
           </div>
 

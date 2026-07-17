@@ -30,13 +30,16 @@ ONE job (no path filters). Merging to `main` now would push the un-migrated M2/M
 
 ## Open decisions / known gaps
 
-- **Developer flow isn't fully live.** The landing's Developers section links to
-  `https://ethiovinapi.senaycreatives.com/developers` (+ `/docs`). Those are `web/` (Next) routes,
-  and that app isn't confirmed deployed/domain-mapped yet — AND the M3 `/v1` backend isn't in prod
-  (needs L1/L2/L4). So the links are aspirational until the real launch. Key management lives in
-  `web/ /dashboard/api`, not in the `client/` SPA. Revisit when `web/` is live.
+- **Developer flow isn't fully live.** The landing's Developers section USED to link to
+  `https://ethiovinapi.senaycreatives.com/developers` (+ `/docs`) — but that's the **Express API
+  host**, which serves JSON only, so those Next portal routes 404'd there (`{"error":"Not found"}`).
+  **Fixed 2026-07-18:** `LandingPage.DEV_PORTAL_URL` is now empty → the section shows a "Developer
+  API — launching soon" pill instead of dead links. The `web/` portal (real `/developers`,
+  `/developers/docs`, `/dashboard/api`) still isn't deployed/domain-mapped, and it will live on its
+  OWN origin (never the API host). **To re-enable:** deploy `web/`, map a subdomain (e.g.
+  `developers.senaycreatives.com`), then set `DEV_PORTAL_URL` to that origin.
 - The `curl` sample uses the API domain `ethiovinapi.senaycreatives.com/v1/decode` — correct once
-  the M3 backend is deployed.
+  the M3 backend is deployed (kept as-is).
 
 ## 2026-07-16 — review fix: smoke script invalid-VIN contract
 
