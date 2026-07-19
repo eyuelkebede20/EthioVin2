@@ -3,9 +3,10 @@ import { authClient } from "../lib/auth-client";
 
 interface NavbarProps {
   isAdmin: boolean;
+  isVerifier: boolean;
 }
 
-export default function Navbar({ isAdmin }: NavbarProps) {
+export default function Navbar({ isAdmin, isVerifier }: NavbarProps) {
   const { data: session } = authClient.useSession();
   const location = useLocation();
 
@@ -25,8 +26,8 @@ export default function Navbar({ isAdmin }: NavbarProps) {
           EthioVin
         </div>
 
-        {/* Navigation */}
-        {isAdmin && (
+        {/* Navigation — shown to verifiers (scan + bulk add) and admins (+ dashboard). */}
+        {isVerifier && (
           <div className="flex gap-2 bg-slate-800 p-1 rounded-lg">
             <Link
               to="/scan"
@@ -34,9 +35,14 @@ export default function Navbar({ isAdmin }: NavbarProps) {
             >
               Scanner
             </Link>
-            <Link to="/admin" className={`px-4 py-1 rounded transition-colors ${location.pathname.startsWith("/admin") ? "bg-slate-600" : "hover:bg-slate-700"}`}>
-              Dashboard
+            <Link to="/bulk" className={`px-4 py-1 rounded transition-colors ${location.pathname.startsWith("/bulk") ? "bg-slate-600" : "hover:bg-slate-700"}`}>
+              Bulk add
             </Link>
+            {isAdmin && (
+              <Link to="/admin" className={`px-4 py-1 rounded transition-colors ${location.pathname.startsWith("/admin") ? "bg-slate-600" : "hover:bg-slate-700"}`}>
+                Dashboard
+              </Link>
+            )}
           </div>
         )}
       </div>

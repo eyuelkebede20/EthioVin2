@@ -18,6 +18,18 @@ the dense build journal + launch runbook (L1–L8) are below and remain authorit
   fragmented; there was no single entry point for a human dev. **CLOSED.**
 - [x] Documentation map updated to list `README.md` first (in README + this file).
 
+### Bulk add — DONE 2026-07-19
+- [x] **`POST /api/v1/vin/bulk-log`** (verifier roles): paste ≤100 VINs → auto-records every one
+  whose model is already known (cache/exact hit) using the shared `writeLedgerRecord` (extracted
+  from `saveVehicleToLedger`), reports `added`/`exists`/`needs_verification`/`invalid` per VIN. No AI cost.
+- [x] Client: `/bulk` page (`BulkAddPage`, verifier-gated) — paste box, live VIN count, results table
+  with status chips + "verify →" links for unknowns; "Bulk add" nav tab. `bulkLog` API wrapper.
+- [x] **Proven end-to-end** on a throwaway DB: seed 1 BYD model → bulk [sibling, same, unknown, bad]
+  → summary `added 1 / exists 1 / needs_verification 1 / invalid 1`. Backend typecheck+build+test +
+  client tsc + build clean.
+- [ ] Follow-up (needs infra decision): durable **photo storage** (store images server-side instead of
+  hotlinking) so bulk-added + verified cars keep their photos. Pairs with the image-rot fix.
+
 ### The one real remaining FEATURE
 - [x] **`POST /v1/decode/batch`** (L8) — DONE 2026-07-17. Replaced the `501` stub with the real
   endpoint: 1..50 VINs, each decoded + charged INDEPENDENTLY via the same charging law as

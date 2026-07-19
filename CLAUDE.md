@@ -211,6 +211,7 @@ guards `/api/auth/*`). Roles allowed are in parentheses. (M3 adds the keyed publ
 - `POST /scan` — decode a VIN (`requireAuth` — any logged-in user).
 - `POST /verify` — submit verified specs for `(wmi, vds_code)`; logs to `verification_log`, upserts cache (super_admin, garage_admin, diagnostician).
 - `POST /log` — save a verified vehicle to the ledger AND seed the shared cache (super_admin, garage_admin, diagnostician).
+- `POST /bulk-log` — record MANY VINs at once (≤100): decodes each server-side and auto-records the ones whose model is ALREADY known (cache/exact hit) — no AI, no cost — reporting per-VIN `added`/`exists`/`needs_verification`/`invalid`. Shares `writeLedgerRecord` with `/log` (super_admin, garage_admin, diagnostician).
 - `PATCH /ledger/:vin` — edit one ledger row's identity fields (make/model/year/image); leaves cache key + shared specs untouched (super_admin, garage_admin, diagnostician).
 - `PATCH /specs` — edit the SHARED specs for a `(wmi, vds_code)`; updates the cached blob and every ledger row of that model (super_admin, garage_admin, diagnostician).
 - `GET /conflicts` — cache rows flagged `status = 'conflict'`, joined with their proposals (super_admin).

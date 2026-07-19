@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { processVin, submitVerifiedSpec, getVehicleImages, getConflicts, generateDraft, resolveConflict, saveVehicleToLedger, updateLedger, updateSpecs } from "../controllers/vinController.ts";
+import { processVin, submitVerifiedSpec, getVehicleImages, getConflicts, generateDraft, resolveConflict, saveVehicleToLedger, bulkSaveToLedger, updateLedger, updateSpecs } from "../controllers/vinController.ts";
 import { requireAuth, requireRole } from "../middleware/authMiddleware.ts";
 import rateLimit from "express-rate-limit";
 
@@ -21,6 +21,7 @@ router.get("/conflicts", requireRole("super_admin"), getConflicts);
 router.post("/resolve", requireRole("super_admin"), resolveConflict);
 router.post("/generate-draft", requireRole("super_admin", "garage_admin", "diagnostician"), externalApiLimiter, generateDraft);
 router.post("/log", requireRole("super_admin", "garage_admin", "diagnostician"), saveVehicleToLedger);
+router.post("/bulk-log", requireRole("super_admin", "garage_admin", "diagnostician"), bulkSaveToLedger);
 router.patch("/ledger/:vin", requireRole("super_admin", "garage_admin", "diagnostician"), updateLedger);
 router.patch("/specs", requireRole("super_admin", "garage_admin", "diagnostician"), updateSpecs);
 router.post("/images", requireRole("super_admin", "garage_admin", "diagnostician"), externalApiLimiter, getVehicleImages);

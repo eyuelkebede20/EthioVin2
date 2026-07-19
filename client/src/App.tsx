@@ -6,7 +6,9 @@ import LoginPage from "./pages/LoginPage";
 import ScannerPage from "./pages/ScannerPage";
 import AdminDashboard from "./pages/AdminDashboard";
 import HistoryPage from "./pages/HistoryPage";
+import BulkAddPage from "./pages/BulkAddPage";
 import Navbar from "./components/Navbar";
+import { canVerify } from "./lib/roles";
 
 export default function App() {
   const { data: session, isPending } = authClient.useSession();
@@ -15,6 +17,7 @@ export default function App() {
 
   const isAuthed = !!session;
   const isAdmin = session?.user.role === "super_admin";
+  const isVerifier = canVerify(session?.user.role);
 
   // Guard app routes: send signed-out visitors to /login (not the landing), so the
   // deep link they wanted resumes after auth-less bounce.
@@ -23,7 +26,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-base-200">
-        <Navbar isAdmin={!!isAdmin} />
+        <Navbar isAdmin={!!isAdmin} isVerifier={isVerifier} />
         <main>
           <Routes>
             {/* Public: signed-in users skip the marketing page straight to the scanner. */}
@@ -32,6 +35,7 @@ export default function App() {
 
             {/* Authenticated app. */}
             <Route path="/scan" element={requireAuth(<ScannerPage />)} />
+            <Route path="/bulk" element={requireAuth(isVerifier ? <BulkAddPage /> : <Navigate to="/scan" replace />)} />
             <Route path="/history/:vin" element={requireAuth(<HistoryPage />)} />
             <Route path="/admin" element={requireAuth(isAdmin ? <AdminDashboard /> : <Navigate to="/scan" replace />)} />
 

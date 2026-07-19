@@ -5,16 +5,81 @@ import { and, desc, eq, ilike, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { generateVehicleSpecsDraft } from "../services/aiService.ts";
 import { parseVin } from "../utils/vin.ts";
+import { resolveVehicle } from "./decodeController.ts";
 import { AppError } from "../middleware/errorHandler.ts";
 import {
   scanSchema,
   saveLedgerSchema,
+  bulkLogSchema,
   submitVerifiedSpecSchema,
   resolveConflictSchema,
   generateDraftSchema,
   getImagesSchema,
   updateLedgerSchema,
 } from "../utils/validation.ts";
+
+// Transaction type for helpers that run inside db.transaction(...).
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Write one vehicle to BOTH brains in a single tx: the shared spec blob + DNA cache
+ * (Brain 2) and the exact per-VIN ledger row (Brain 1). Shared by the single save
+ * (`saveVehicleToLedger`) and the bulk add (`bulkSaveToLedger`) so the write stays
+ * identical. Derive wmi/vds/vis/plant on the SERVER before calling this.
+ */
+async function writeLedgerRecord(
+  tx: Tx,
+  args: {
+    keyVin: string;
+    wmi: string;
+    vds_code: string;
+    vis: string;
+    plant: string;
+    manufacturer: string;
+    model: string;
+    year: string;
+    image_url: string | null;
+    hardware_specs: unknown;
+    country: string | null;
+    userId: string;
+  },
+) {
+  // 1. Shared spec blob (Brain 2).
+  const [savedSpec] = await tx.insert(vehicle_specs).values({ hardware_specs: args.hardware_specs }).returning({ id: vehicle_specs.id });
+  if (!savedSpec) throw new AppError(500, "Failed to persist specifications");
+
+  // 2. Ensure the parent WMI row exists; seed if missing, upgrade a stale "Unknown",
+  //    never clobber a known make.
+  await tx
+    .insert(wmi_mapping)
+    .values({ wmi: args.wmi, manufacturer: args.manufacturer })
+    .onConflictDoUpdate({ target: wmi_mapping.wmi, set: { manufacturer: args.manufacturer, updated_at: new Date() }, setWhere: eq(wmi_mapping.manufacturer, "Unknown") });
+
+  // 3. Seed the DNA cache (what makes a different-VIS car of this model decode next time).
+  await tx.insert(vds_cache).values({ wmi: args.wmi, vds_code: args.vds_code, spec_id: savedSpec.id, status: "verified" }).onConflictDoNothing();
+
+  // 4. Exact identity (Brain 1).
+  const values = {
+    vin: args.keyVin,
+    manufacturer: args.manufacturer,
+    year: args.year,
+    model: args.model,
+    image_url: args.image_url,
+    wmi: args.wmi,
+    vds: args.vds_code,
+    vis: args.vis,
+    plant: args.plant,
+    country: args.country,
+    hardware_specs: args.hardware_specs,
+    scannedBy: args.userId,
+  };
+  const [row] = await tx
+    .insert(vehicle_ledger)
+    .values(values)
+    .onConflictDoUpdate({ target: vehicle_ledger.vin, set: { ...values, updatedAt: new Date() } })
+    .returning();
+  return row;
+}
 
 // ---------------------------------------------------------------------------
 // POST /scan — decode a VIN against the ledger + DNA cache.
@@ -115,50 +180,97 @@ export const saveVehicleToLedger = async (req: Request, res: Response) => {
   // Derive the cache key the SAME way processVin does — never trust client values.
   const { keyVin, wmi, vds_code, vis, plant } = parseVin(body.vin);
 
-  const record = await db.transaction(async (tx) => {
-    // 1. Save the shared spec blob (Brain 2).
-    const [savedSpec] = await tx.insert(vehicle_specs).values({ hardware_specs: hardwareSpecs }).returning({ id: vehicle_specs.id });
-    if (!savedSpec) throw new AppError(500, "Failed to persist specifications");
-
-    // 2. Ensure the parent WMI row exists (FK target for vds_cache). Seed it if
-    //    missing, upgrade it if currently "Unknown", but never clobber a known make.
-    await tx
-      .insert(wmi_mapping)
-      .values({ wmi, manufacturer })
-      .onConflictDoUpdate({
-        target: wmi_mapping.wmi,
-        set: { manufacturer, updated_at: new Date() },
-        setWhere: eq(wmi_mapping.manufacturer, "Unknown"),
-      });
-
-    // 3. Write the cache — this is what makes a different-VIS car decode next time.
-    await tx.insert(vds_cache).values({ wmi, vds_code, spec_id: savedSpec.id, status: "verified" }).onConflictDoNothing();
-
-    // 4. Save the exact identity (Brain 1).
-    const values = {
-      vin: keyVin,
-      manufacturer,
-      year,
-      model,
-      image_url,
+  const record = await db.transaction((tx) =>
+    writeLedgerRecord(tx, {
+      keyVin,
       wmi,
-      vds: vds_code,
+      vds_code,
       vis: baseFacts?.vis ?? vis,
       plant: baseFacts?.plant ?? plant,
-      country: baseFacts?.country ?? null,
+      manufacturer,
+      model,
+      year,
+      image_url,
       hardware_specs: hardwareSpecs,
-      scannedBy: userId,
-    };
-    // Return the upserted row directly — no need for a follow-up SELECT round-trip.
-    const [row] = await tx
-      .insert(vehicle_ledger)
-      .values(values)
-      .onConflictDoUpdate({ target: vehicle_ledger.vin, set: { ...values, updatedAt: new Date() } })
-      .returning();
-    return row;
-  });
+      country: baseFacts?.country ?? null,
+      userId,
+    }),
+  );
 
   return res.json({ success: true, record });
+};
+
+// ---------------------------------------------------------------------------
+// POST /bulk-log — record MANY VINs at once, leveraging the DNA cache. For each
+// VIN we decode server-side and, when the model is ALREADY known (a cache hit),
+// auto-record it to the ledger with that model's make/model/specs/image and this
+// VIN's own decoded year — no AI, no cost. VINs whose model isn't known yet are
+// reported as "needs_verification" (do those one-by-one via the normal flow), and
+// VINs already in the ledger are reported as "exists". Partial + idempotent.
+// ---------------------------------------------------------------------------
+export const bulkSaveToLedger = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) throw new AppError(401, "Unauthorized");
+
+  const { vins } = bulkLogSchema.parse(req.body);
+
+  const results: Array<{ vin: string; status: "added" | "exists" | "needs_verification" | "invalid" | "error"; make?: string | null; model?: string | null; message?: string }> = [];
+  const summary = { total: vins.length, added: 0, exists: 0, needs_verification: 0, invalid: 0, error: 0 };
+
+  for (const rawVin of vins) {
+    // Server-derived key; a bad VIN is reported, never trusted.
+    let parsed: ReturnType<typeof parseVin>;
+    try {
+      parsed = parseVin(rawVin);
+    } catch {
+      summary.invalid++;
+      results.push({ vin: rawVin, status: "invalid", message: "Not a valid 17-character VIN." });
+      continue;
+    }
+
+    const { match, identity, specs } = await resolveVehicle(rawVin);
+
+    // Already recorded → no-op (idempotent).
+    if (match === "exact") {
+      summary.exists++;
+      results.push({ vin: parsed.keyVin, status: "exists", make: identity.manufacturer ?? null, model: identity.model ?? null });
+      continue;
+    }
+
+    // Known model (cache hit) with usable identity → auto-record.
+    if (match === "model" && specs && identity.model) {
+      try {
+        const record = await db.transaction((tx) =>
+          writeLedgerRecord(tx, {
+            keyVin: parsed.keyVin,
+            wmi: parsed.wmi,
+            vds_code: parsed.vds_code,
+            vis: parsed.vis,
+            plant: parsed.plant,
+            manufacturer: identity.manufacturer ?? "Unknown",
+            model: identity.model ?? "",
+            year: parsed.year, // per-VIN decoded year — never shared via the cache
+            image_url: identity.image_url ?? null,
+            hardware_specs: specs,
+            country: identity.country ?? null,
+            userId,
+          }),
+        );
+        summary.added++;
+        results.push({ vin: parsed.keyVin, status: "added", make: record?.manufacturer ?? null, model: record?.model ?? null });
+      } catch (err) {
+        summary.error++;
+        results.push({ vin: parsed.keyVin, status: "error", message: err instanceof Error ? err.message : "Save failed." });
+      }
+      continue;
+    }
+
+    // Unknown model (miss, or a cache row without a named sibling) → manual verify.
+    summary.needs_verification++;
+    results.push({ vin: parsed.keyVin, status: "needs_verification", make: identity.manufacturer ?? null, model: identity.model ?? null });
+  }
+
+  return res.json({ summary, results });
 };
 
 // ---------------------------------------------------------------------------

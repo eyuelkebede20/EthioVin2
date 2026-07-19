@@ -105,6 +105,22 @@ export interface SaveLedgerInput {
 export const saveToLedger = (input: SaveLedgerInput) =>
   api<{ success: boolean; record: LedgerRecord }>("/api/v1/vin/log", { method: "POST", body: input });
 
+// --- Bulk add: record many VINs at once (auto-records already-known models) ---
+export type BulkStatus = "added" | "exists" | "needs_verification" | "invalid" | "error";
+export interface BulkResult {
+  vin: string;
+  status: BulkStatus;
+  make?: string | null;
+  model?: string | null;
+  message?: string;
+}
+export interface BulkLogResponse {
+  summary: { total: number; added: number; exists: number; needs_verification: number; invalid: number; error: number };
+  results: BulkResult[];
+}
+export const bulkLog = (vins: string[]) =>
+  api<BulkLogResponse>("/api/v1/vin/bulk-log", { method: "POST", body: { vins } });
+
 export const submitVerifiedSpec = (input: { wmi: string; vds_code: string; hardware_specs: HardwareSpecs }) =>
   api<{ success: boolean }>("/api/v1/vin/verify", { method: "POST", body: input });
 

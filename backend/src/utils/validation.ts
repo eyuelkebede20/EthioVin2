@@ -101,6 +101,14 @@ export const saveLedgerSchema = z.object({
     .optional(),
 });
 
+// Bulk-add: a list of VINs to auto-record against the DNA cache. 1..100 bounded
+// strings; parseVin is the per-item authority (I/O/Q kept). No specs here — the
+// endpoint only records VINs whose model is ALREADY known (cache/exact hit).
+export const BULK_LOG_MAX = 100;
+export const bulkLogSchema = z.object({
+  vins: z.array(z.string().min(1).max(40)).min(1).max(BULK_LOG_MAX),
+});
+
 // Edit an existing ledger row's identity fields. All optional (partial update);
 // image_url accepts a string or null (null/empty clears the image).
 export const updateLedgerSchema = z.object({
